@@ -47,7 +47,7 @@ import org.jboss.arquillian.container.test.api.ContainerController;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.test.api.ArquillianResource;
-import org.jboss.as.arquillian.container.Authentication;
+import org.wildfly.test.api.Authentication;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.test.shared.TestSuiteEnvironment;
 import org.jboss.as.test.shared.TimeoutUtil;
@@ -516,7 +516,7 @@ public class HornetQBackupActivationTestCase {
     private static void executeWithFailure(ModelControllerClient client, ModelNode operation) throws IOException {
         ModelNode result = client.execute(operation);
         assertEquals(result.toJSONString(true), FAILED, result.get(OUTCOME).asString());
-        assertTrue(result.toJSONString(true), result.get(FAILURE_DESCRIPTION).asString().contains("JBAS011678"));
+        assertTrue(result.toJSONString(true), result.get(FAILURE_DESCRIPTION).asString().contains("WFLYMSG0066"));
         assertFalse(result.has(RESULT));
     }
 

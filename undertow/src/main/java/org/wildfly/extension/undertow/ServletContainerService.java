@@ -49,8 +49,11 @@ public class ServletContainerService implements Service<ServletContainerService>
     private final String defaultEncoding;
     private final boolean useListenerEncoding;
     private final boolean ignoreFlush;
+    private final boolean eagerFilterInit;
+    private final int defaultSessionTimeout;
 
-    public ServletContainerService(boolean allowNonStandardWrappers, ServletStackTraces stackTraces, SessionCookieConfig sessionCookieConfig, JSPConfig jspConfig, String defaultEncoding, boolean useListenerEncoding, boolean ignoreFlush) {
+    public ServletContainerService(boolean allowNonStandardWrappers, ServletStackTraces stackTraces, SessionCookieConfig sessionCookieConfig, JSPConfig jspConfig,
+                                   String defaultEncoding, boolean useListenerEncoding, boolean ignoreFlush, boolean eagerFilterInit, int defaultSessionTimeout) {
         this.allowNonStandardWrappers = allowNonStandardWrappers;
         this.stackTraces = stackTraces;
         this.sessionCookieConfig = sessionCookieConfig;
@@ -58,6 +61,8 @@ public class ServletContainerService implements Service<ServletContainerService>
         this.defaultEncoding = defaultEncoding;
         this.useListenerEncoding = useListenerEncoding;
         this.ignoreFlush = ignoreFlush;
+        this.eagerFilterInit = eagerFilterInit;
+        this.defaultSessionTimeout = defaultSessionTimeout;
     }
 
     public void start(StartContext context) throws StartException {
@@ -118,5 +123,13 @@ public class ServletContainerService implements Service<ServletContainerService>
 
     public boolean isIgnoreFlush() {
         return ignoreFlush;
+    }
+
+    public boolean isEagerFilterInit() {
+        return eagerFilterInit;
+    }
+
+    public int getDefaultSessionTimeout() {
+        return defaultSessionTimeout;
     }
 }

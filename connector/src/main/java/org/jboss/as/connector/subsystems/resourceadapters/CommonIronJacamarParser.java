@@ -21,36 +21,6 @@
  */
 package org.jboss.as.connector.subsystems.resourceadapters;
 
-import org.jboss.as.connector.util.AbstractParser;
-import org.jboss.as.connector.util.ParserException;
-import org.jboss.as.controller.parsing.ParseUtils;
-import org.jboss.dmr.ModelNode;
-import org.jboss.jca.common.CommonBundle;
-import org.jboss.jca.common.api.metadata.common.Capacity;
-import org.jboss.jca.common.api.metadata.common.CommonAdminObject;
-import org.jboss.jca.common.api.metadata.common.CommonPool;
-import org.jboss.jca.common.api.metadata.common.CommonSecurity;
-import org.jboss.jca.common.api.metadata.common.CommonTimeOut;
-import org.jboss.jca.common.api.metadata.common.CommonValidation;
-import org.jboss.jca.common.api.metadata.common.CommonXaPool;
-import org.jboss.jca.common.api.metadata.common.Credential;
-import org.jboss.jca.common.api.metadata.common.Recovery;
-import org.jboss.jca.common.api.metadata.common.v10.CommonConnDef;
-import org.jboss.jca.common.api.metadata.common.v11.ConnDefPool;
-import org.jboss.jca.common.api.metadata.common.v11.ConnDefXaPool;
-import org.jboss.jca.common.api.metadata.ds.v11.DataSource;
-import org.jboss.jca.common.api.metadata.ds.v11.XaDataSource;
-import org.jboss.jca.common.api.metadata.ds.v12.DsPool;
-import org.jboss.jca.common.api.metadata.resourceadapter.v10.ResourceAdapter;
-import org.jboss.jca.common.api.validator.ValidateException;
-import org.jboss.logging.Messages;
-import org.jboss.staxmapper.XMLExtendedStreamReader;
-
-import javax.xml.stream.XMLStreamException;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.Map;
-
 import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
 import static javax.xml.stream.XMLStreamConstants.START_ELEMENT;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.BACKGROUNDVALIDATION;
@@ -68,11 +38,13 @@ import static org.jboss.as.connector.subsystems.common.pool.Constants.POOL_FLUSH
 import static org.jboss.as.connector.subsystems.common.pool.Constants.POOL_PREFILL;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.POOL_USE_STRICT_MIN;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.USE_FAST_FAIL;
+import static org.jboss.as.connector.subsystems.common.pool.Constants.VALIDATE_ON_MATCH;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ALLOCATION_RETRY;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ALLOCATION_RETRY_WAIT_MILLIS;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.APPLICATION;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.CLASS_NAME;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.CONFIG_PROPERTY_VALUE;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.CONNECTABLE;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ENABLED;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ENLISTMENT;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.INTERLEAVING;
@@ -90,12 +62,42 @@ import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SAME_
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SECURITY_DOMAIN;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SECURITY_DOMAIN_AND_APPLICATION;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SHARABLE;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.TRACKING;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.USE_CCM;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.USE_JAVA_CONTEXT;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WRAP_XA_RESOURCE;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.XA_RESOURCE_TIMEOUT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.xml.stream.XMLStreamException;
+
+import org.jboss.as.connector.util.AbstractParser;
+import org.jboss.as.connector.util.ParserException;
+import org.jboss.as.controller.parsing.ParseUtils;
+import org.jboss.dmr.ModelNode;
+import org.jboss.jca.common.CommonBundle;
+import org.jboss.jca.common.api.metadata.common.Capacity;
+import org.jboss.jca.common.api.metadata.common.Credential;
+import org.jboss.jca.common.api.metadata.common.Pool;
+import org.jboss.jca.common.api.metadata.common.Recovery;
+import org.jboss.jca.common.api.metadata.common.Security;
+import org.jboss.jca.common.api.metadata.common.TimeOut;
+import org.jboss.jca.common.api.metadata.common.Validation;
+import org.jboss.jca.common.api.metadata.common.XaPool;
+import org.jboss.jca.common.api.metadata.ds.DataSource;
+import org.jboss.jca.common.api.metadata.ds.DsPool;
+import org.jboss.jca.common.api.metadata.ds.XaDataSource;
+import org.jboss.jca.common.api.metadata.resourceadapter.Activation;
+import org.jboss.jca.common.api.metadata.resourceadapter.AdminObject;
+import org.jboss.jca.common.api.metadata.resourceadapter.ConnectionDefinition;
+import org.jboss.jca.common.api.validator.ValidateException;
+import org.jboss.logging.Messages;
+import org.jboss.staxmapper.XMLExtendedStreamReader;
 
 /**
  * A CommonIronJacamarParser.
@@ -132,7 +134,7 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
      * @throws org.jboss.jca.common.api.validator.ValidateException
      *                         ValidateException
      */
-    protected void parseConnectionDefinitions(final XMLExtendedStreamReader reader, final Map<String, ModelNode> map,
+    protected void parseConnectionDefinitions_3_0(final XMLExtendedStreamReader reader, final Map<String, ModelNode> map,
                                               final Map<String, HashMap<String, ModelNode>> configMap, final boolean isXa)
             throws XMLStreamException, ParserException, ValidateException {
 
@@ -146,11 +148,21 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
         boolean poolDefined = Boolean.FALSE;
 
         for (int i = 0; i < attributeSize; i++) {
-            org.jboss.jca.common.api.metadata.common.v11.CommonConnDef.Attribute attribute = org.jboss.jca.common.api.metadata.common.v11.CommonConnDef.Attribute.forName(reader.getAttributeLocalName(i));
+            ConnectionDefinition.Attribute attribute = ConnectionDefinition.Attribute.forName(reader.getAttributeLocalName(i));
             String value = reader.getAttributeValue(i);
             switch (attribute) {
                 case ENABLED: {
                     ENABLED.parseAndSetParameter(value, connectionDefinitionNode, reader);
+
+                    break;
+                }
+                case CONNECTABLE: {
+                    CONNECTABLE.parseAndSetParameter(value, connectionDefinitionNode, reader);
+
+                    break;
+                }
+                case TRACKING: {
+                    TRACKING.parseAndSetParameter(value, connectionDefinitionNode, reader);
 
                     break;
                 }
@@ -200,7 +212,7 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
                     poolName = jndiName.substring(jndiName.lastIndexOf(":") + 1);
                 }
             } else {
-                throw ParseUtils.missingRequired(reader, EnumSet.of(CommonConnDef.Attribute.JNDI_NAME));
+                throw ParseUtils.missingRequired(reader, EnumSet.of(ConnectionDefinition.Attribute.JNDI_NAME));
             }
         }
 
@@ -208,19 +220,19 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
         while (reader.hasNext()) {
             switch (reader.nextTag()) {
                 case END_ELEMENT: {
-                    if (ResourceAdapter.Tag.forName(reader.getLocalName()) == ResourceAdapter.Tag.CONNECTION_DEFINITION) {
+                    if (Activation.Tag.forName(reader.getLocalName()) == Activation.Tag.CONNECTION_DEFINITION) {
 
                         map.put(poolName, connectionDefinitionNode);
                         return;
                     } else {
-                        if (CommonConnDef.Tag.forName(reader.getLocalName()) == CommonConnDef.Tag.UNKNOWN) {
+                        if (ConnectionDefinition.Tag.forName(reader.getLocalName()) == ConnectionDefinition.Tag.UNKNOWN) {
                             throw ParseUtils.unexpectedEndElement(reader);
                         }
                     }
                     break;
                 }
                 case START_ELEMENT: {
-                    switch (CommonConnDef.Tag.forName(reader.getLocalName())) {
+                    switch (ConnectionDefinition.Tag.forName(reader.getLocalName())) {
                         case CONFIG_PROPERTY: {
                             if (!configMap.containsKey(poolName)) {
                                 configMap.put(poolName, new HashMap<String, ModelNode>(0));
@@ -277,23 +289,180 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
 
     }
 
+    /**
+         * parse a single connection-definition tag
+         *
+         * @param reader the reader
+         * @throws javax.xml.stream.XMLStreamException
+         *                         XMLStreamException
+         * @throws ParserException ParserException
+         * @throws org.jboss.jca.common.api.validator.ValidateException
+         *                         ValidateException
+         */
+        protected void parseConnectionDefinitions_1_0(final XMLExtendedStreamReader reader, final Map<String, ModelNode> map,
+                                                  final Map<String, HashMap<String, ModelNode>> configMap, final boolean isXa)
+                throws XMLStreamException, ParserException, ValidateException {
+
+
+            final ModelNode connectionDefinitionNode = new ModelNode();
+            connectionDefinitionNode.get(OP).set(ADD);
+
+            String poolName = null;
+            String jndiName = null;
+            int attributeSize = reader.getAttributeCount();
+            boolean poolDefined = Boolean.FALSE;
+
+            for (int i = 0; i < attributeSize; i++) {
+                ConnectionDefinition.Attribute attribute = ConnectionDefinition.Attribute.forName(reader.getAttributeLocalName(i));
+                String value = reader.getAttributeValue(i);
+                switch (attribute) {
+                    case ENABLED: {
+                        ENABLED.parseAndSetParameter(value, connectionDefinitionNode, reader);
+
+                        break;
+                    }
+                    case JNDI_NAME: {
+                        jndiName = value;
+                        JNDINAME.parseAndSetParameter(jndiName, connectionDefinitionNode, reader);
+                        break;
+                    }
+                    case POOL_NAME: {
+                        poolName = value;
+                        break;
+                    }
+                    case USE_JAVA_CONTEXT: {
+                        USE_JAVA_CONTEXT.parseAndSetParameter(value, connectionDefinitionNode, reader);
+
+                        break;
+                    }
+
+                    case USE_CCM: {
+                        USE_CCM.parseAndSetParameter(value, connectionDefinitionNode, reader);
+                        break;
+                    }
+
+                    case SHARABLE: {
+                        SHARABLE.parseAndSetParameter(value, connectionDefinitionNode, reader);
+                        break;
+                    }
+
+                    case ENLISTMENT: {
+                        ENLISTMENT.parseAndSetParameter(value, connectionDefinitionNode, reader);
+                        break;
+                    }
+
+                    case CLASS_NAME: {
+                        CLASS_NAME.parseAndSetParameter(value, connectionDefinitionNode, reader);
+                        break;
+                    }
+                    default:
+                        throw ParseUtils.unexpectedAttribute(reader,i);
+                }
+            }
+            if (poolName == null || poolName.trim().equals("")) {
+                if (jndiName != null && jndiName.trim().length() != 0) {
+                    if (jndiName.contains("/")) {
+                        poolName = jndiName.substring(jndiName.lastIndexOf("/") + 1);
+                    } else {
+                        poolName = jndiName.substring(jndiName.lastIndexOf(":") + 1);
+                    }
+                } else {
+                    throw ParseUtils.missingRequired(reader, EnumSet.of(ConnectionDefinition.Attribute.JNDI_NAME));
+                }
+            }
+
+
+            while (reader.hasNext()) {
+                switch (reader.nextTag()) {
+                    case END_ELEMENT: {
+                        if (Activation.Tag.forName(reader.getLocalName()) == Activation.Tag.CONNECTION_DEFINITION) {
+
+                            map.put(poolName, connectionDefinitionNode);
+                            return;
+                        } else {
+                            if (ConnectionDefinition.Tag.forName(reader.getLocalName()) == ConnectionDefinition.Tag.UNKNOWN) {
+                                throw ParseUtils.unexpectedEndElement(reader);
+                            }
+                        }
+                        break;
+                    }
+                    case START_ELEMENT: {
+                        switch (ConnectionDefinition.Tag.forName(reader.getLocalName())) {
+                            case CONFIG_PROPERTY: {
+                                if (!configMap.containsKey(poolName)) {
+                                    configMap.put(poolName, new HashMap<String, ModelNode>(0));
+                                }
+                                parseConfigProperties(reader, configMap.get(poolName));
+                                break;
+                            }
+                            case SECURITY: {
+                                parseSecuritySettings(reader, connectionDefinitionNode);
+                                break;
+                            }
+                            case TIMEOUT: {
+                                parseTimeOut(reader, isXa, connectionDefinitionNode);
+                                break;
+                            }
+                            case VALIDATION: {
+                                parseValidation(reader, connectionDefinitionNode);
+                                break;
+                            }
+                            case XA_POOL: {
+                                if (!isXa) {
+                                    throw ParseUtils.unexpectedElement(reader);
+                                }
+                                if (poolDefined) {
+                                    throw new ParserException(bundle.multiplePools());
+                                }
+                                parseXaPool(reader, connectionDefinitionNode);
+                                poolDefined = true;
+                                break;
+                            }
+                            case POOL: {
+                                if (isXa) {
+                                    throw ParseUtils.unexpectedElement(reader);
+                                }
+                                if (poolDefined) {
+                                    throw new ParserException(bundle.multiplePools());
+                                }
+                                parsePool(reader, connectionDefinitionNode);
+                                poolDefined = true;
+                                break;
+                            }
+                            case RECOVERY: {
+                                parseRecovery(reader, connectionDefinitionNode);
+                                break;
+                            }
+                            default:
+                                throw ParseUtils.unexpectedElement(reader);
+                        }
+                        break;
+                    }
+                }
+            }
+            throw ParseUtils.unexpectedEndElement(reader);
+
+        }
+
+
+
     private void parseValidation(XMLExtendedStreamReader reader, ModelNode node) throws XMLStreamException, ParserException {
 
         while (reader.hasNext()) {
             switch (reader.nextTag()) {
                 case END_ELEMENT: {
-                    if (CommonConnDef.Tag.forName(reader.getLocalName()) == CommonConnDef.Tag.VALIDATION) {
+                    if (ConnectionDefinition.Tag.forName(reader.getLocalName()) == ConnectionDefinition.Tag.VALIDATION) {
 
                         return;
                     } else {
-                        if (CommonValidation.Tag.forName(reader.getLocalName()) == CommonValidation.Tag.UNKNOWN) {
+                        if (ConnectionDefinition.Tag.forName(reader.getLocalName()) == ConnectionDefinition.Tag.UNKNOWN) {
                             throw ParseUtils.unexpectedEndElement(reader);
                         }
                     }
                     break;
                 }
                 case START_ELEMENT: {
-                    switch (CommonValidation.Tag.forName(reader.getLocalName())) {
+                    switch (Validation.Tag.forName(reader.getLocalName())) {
                         case BACKGROUND_VALIDATION: {
                             String value = rawElementText(reader);
                             BACKGROUNDVALIDATION.parseAndSetParameter(value, node, reader);
@@ -307,6 +476,11 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
                         case USE_FAST_FAIL: {
                             String value = rawElementText(reader);
                             USE_FAST_FAIL.parseAndSetParameter(value, node, reader);
+                            break;
+                        }
+                        case VALIDATE_ON_MATCH: {
+                            String value = rawElementText(reader);
+                            VALIDATE_ON_MATCH.parseAndSetParameter(value, node, reader);
                             break;
                         }
                         default:
@@ -326,11 +500,11 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
         while (reader.hasNext()) {
             switch (reader.nextTag()) {
                 case END_ELEMENT: {
-                    if (CommonConnDef.Tag.forName(reader.getLocalName()) == CommonConnDef.Tag.TIMEOUT) {
+                    if (ConnectionDefinition.Tag.forName(reader.getLocalName()) == ConnectionDefinition.Tag.TIMEOUT) {
 
                         return;
                     } else {
-                        if (CommonTimeOut.Tag.forName(reader.getLocalName()) == CommonTimeOut.Tag.UNKNOWN) {
+                        if (TimeOut.Tag.forName(reader.getLocalName()) == TimeOut.Tag.UNKNOWN) {
                             throw ParseUtils.unexpectedElement(reader);
                         }
                     }
@@ -338,7 +512,7 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
                 }
                 case START_ELEMENT: {
                     String value = rawElementText(reader);
-                    switch (CommonTimeOut.Tag.forName(reader.getLocalName())) {
+                    switch (TimeOut.Tag.forName(reader.getLocalName())) {
                         case ALLOCATION_RETRY: {
                             ALLOCATION_RETRY.parseAndSetParameter(value, node, reader);
                             break;
@@ -382,7 +556,7 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
         String poolName = null;
         String jndiName = null;
         for (int i = 0; i < attributeSize; i++) {
-            CommonAdminObject.Attribute attribute = CommonAdminObject.Attribute.forName(reader
+            AdminObject.Attribute attribute = AdminObject.Attribute.forName(reader
                     .getAttributeLocalName(i));
             switch (attribute) {
                 case ENABLED: {
@@ -429,26 +603,26 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
                     poolName = jndiName.substring(jndiName.lastIndexOf(":") + 1);
                 }
             } else {
-                throw ParseUtils.missingRequired(reader, EnumSet.of(CommonAdminObject.Attribute.JNDI_NAME));
+                throw ParseUtils.missingRequired(reader, EnumSet.of(AdminObject.Attribute.JNDI_NAME));
 
             }
         }
         while (reader.hasNext()) {
             switch (reader.nextTag()) {
                 case END_ELEMENT: {
-                    if (ResourceAdapter.Tag.forName(reader.getLocalName()) == ResourceAdapter.Tag.ADMIN_OBJECT) {
+                    if (Activation.Tag.forName(reader.getLocalName()) == Activation.Tag.ADMIN_OBJECT) {
 
                         map.put(poolName, adminObjectNode);
                         return;
                     } else {
-                        if (CommonAdminObject.Tag.forName(reader.getLocalName()) == CommonAdminObject.Tag.UNKNOWN) {
+                        if (AdminObject.Tag.forName(reader.getLocalName()) == AdminObject.Tag.UNKNOWN) {
                             throw ParseUtils.unexpectedEndElement(reader);
                         }
                     }
                     break;
                 }
                 case START_ELEMENT: {
-                    switch (CommonAdminObject.Tag.forName(reader.getLocalName())) {
+                    switch (AdminObject.Tag.forName(reader.getLocalName())) {
                         case CONFIG_PROPERTY: {
                             if (!configMap.containsKey(poolName)) {
                                 configMap.put(poolName, new HashMap<String, ModelNode>(0));
@@ -467,7 +641,7 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
     }
 
     /**
-     * parse a {@link org.jboss.jca.common.api.metadata.common.CommonXaPool} object
+     * parse a {@link XaPool} object
      *
      * @param reader reader
      * @throws XMLStreamException XMLStreamException
@@ -485,14 +659,14 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
                         return;
 
                     } else {
-                        if (CommonXaPool.Tag.forName(reader.getLocalName()) == CommonXaPool.Tag.UNKNOWN) {
+                        if (XaPool.Tag.forName(reader.getLocalName()) == XaPool.Tag.UNKNOWN) {
                             throw ParseUtils.unexpectedEndElement(reader);
                         }
                     }
                     break;
                 }
                 case START_ELEMENT: {
-                    switch (ConnDefXaPool.Tag.forName(reader.getLocalName())) {
+                    switch (XaPool.Tag.forName(reader.getLocalName())) {
                         case MAX_POOL_SIZE: {
                             String value = rawElementText(reader);
                             MAX_POOL_SIZE.parseAndSetParameter(value, node, reader);
@@ -579,14 +753,14 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
                         return;
 
                     } else {
-                        if (CommonPool.Tag.forName(reader.getLocalName()) == CommonPool.Tag.UNKNOWN) {
+                        if (Pool.Tag.forName(reader.getLocalName()) == Pool.Tag.UNKNOWN) {
                             throw ParseUtils.unexpectedEndElement(reader);
                         }
                     }
                     break;
                 }
                 case START_ELEMENT: {
-                    switch (ConnDefPool.Tag.forName(reader.getLocalName())) {
+                    switch (Pool.Tag.forName(reader.getLocalName())) {
                         case MAX_POOL_SIZE: {
                             String value = rawElementText(reader);
                             MAX_POOL_SIZE.parseAndSetParameter(value, node, reader);
@@ -732,14 +906,14 @@ public abstract class CommonIronJacamarParser extends AbstractParser {
 
                         return;
                     } else {
-                        if (CommonSecurity.Tag.forName(reader.getLocalName()) == CommonSecurity.Tag.UNKNOWN) {
+                        if (Security.Tag.forName(reader.getLocalName()) == Security.Tag.UNKNOWN) {
                             throw ParseUtils.unexpectedEndElement(reader);
                         }
                     }
                     break;
                 }
                 case START_ELEMENT: {
-                    switch (CommonSecurity.Tag.forName(reader.getLocalName())) {
+                    switch (Security.Tag.forName(reader.getLocalName())) {
 
                         case SECURITY_DOMAIN: {
                             if (securtyDomainMatched) {

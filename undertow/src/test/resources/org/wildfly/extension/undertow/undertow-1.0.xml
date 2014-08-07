@@ -24,10 +24,10 @@
            default-server="some-server" instance-id="some-id">
 
     <buffer-caches>
-        <buffer-cache name="default" buffer-size="1024" buffers-per-region="1024" max-regions="10"/>
+        <buffer-cache name="default" buffer-size="1025" buffers-per-region="1054" max-regions="15"/>
     </buffer-caches>
 
-    <server name="default-server" default-host="localhost" servlet-container="myContainer">
+    <server name="default-server" default-host="other-host" servlet-container="myContainer">
         <ajp-listener name="ajp-connector" socket-binding="ajp" redirect-socket="ajps" max-parameters="5000"/>
         <http-listener name="default" socket-binding="http" certificate-forwarding="true" always-set-keep-alive="${prop.smth:false}" redirect-socket="ajp" proxy-address-forwarding="${prop.smth:false}"/>
         <http-listener name="second" socket-binding="http-2" max-cookies="100" max-parameters="30" url-charset="windows-1250" max-post-size="100000" max-headers="30" redirect-socket="https-non-default"/>
@@ -53,7 +53,7 @@
     </server>
 
 
-    <servlet-container name="myContainer" default-buffer-cache="default" use-listener-encoding="${prop.foo:false}" default-encoding="utf-8" ignore-flush="true">
+    <servlet-container name="myContainer" default-buffer-cache="extra" use-listener-encoding="${prop.foo:false}" default-encoding="utf-8" ignore-flush="true">
         <jsp-config
                 disabled="${prop.disabled:false}"
                 keep-generated="${prop.keep-generated:true}"

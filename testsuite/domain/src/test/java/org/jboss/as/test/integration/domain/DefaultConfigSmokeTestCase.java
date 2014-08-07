@@ -34,16 +34,16 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLConnection;
 
-import junit.framework.Assert;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.test.integration.domain.management.util.DomainLifecycleUtil;
-import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfiguration;
+import org.jboss.as.test.integration.domain.management.util.WildFlyManagedConfiguration;
 import org.jboss.as.test.shared.TestSuiteEnvironment;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
+import org.junit.Assert;
 import org.junit.Test;
 
 /**
@@ -58,7 +58,7 @@ public class DefaultConfigSmokeTestCase extends BuildConfigurationTestBase {
 
     @Test
     public void testStandardHost() throws Exception {
-        final JBossAsManagedConfiguration config = createConfiguration("domain.xml", "host.xml", getClass().getSimpleName());
+        final WildFlyManagedConfiguration config = createConfiguration("domain.xml", "host.xml", getClass().getSimpleName());
         final DomainLifecycleUtil utils = new DomainLifecycleUtil(config);
         try {
             utils.start();
@@ -76,9 +76,9 @@ public class DefaultConfigSmokeTestCase extends BuildConfigurationTestBase {
 
     @Test
     public void testMasterAndSlave() throws Exception {
-        final JBossAsManagedConfiguration masterConfig = createConfiguration("domain.xml", "host-master.xml", getClass().getSimpleName());
+        final WildFlyManagedConfiguration masterConfig = createConfiguration("domain.xml", "host-master.xml", getClass().getSimpleName());
         final DomainLifecycleUtil masterUtils = new DomainLifecycleUtil(masterConfig);
-        final JBossAsManagedConfiguration slaveConfig = createConfiguration("domain.xml", "host-slave.xml", getClass().getSimpleName(),
+        final WildFlyManagedConfiguration slaveConfig = createConfiguration("domain.xml", "host-slave.xml", getClass().getSimpleName(),
                 "slave", slaveAddress, 19999);
         final DomainLifecycleUtil slaveUtils = new DomainLifecycleUtil(slaveConfig);
         try {

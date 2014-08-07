@@ -22,24 +22,31 @@
 
 package org.jboss.as.clustering.infinispan.subsystem;
 
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.services.path.ResolvePathHandler;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 
 /**
  * Resource description for the addressable resource /subsystem=infinispan/cache-container=X/replicated-cache=*
  *
  * @author Richard Achmatowicz (c) 2011 Red Hat Inc.
  */
-public class ReplicatedCacheResourceDefinition extends SharedCacheResourceDefinition {
+public class ReplicatedCacheResourceDefinition extends SharedStateCacheResourceDefinition {
 
-    public static final PathElement REPLICATED_CACHE_PATH = PathElement.pathElement(ModelKeys.REPLICATED_CACHE);
+    static final PathElement WILDCARD_PATH = pathElement(PathElement.WILDCARD_VALUE);
 
-    // attributes
+    static PathElement pathElement(String name) {
+        return PathElement.pathElement(ModelKeys.REPLICATED_CACHE, name);
+    }
 
-    public ReplicatedCacheResourceDefinition(final ResolvePathHandler resolvePathHandler, final boolean runtimeRegistration) {
-        super(REPLICATED_CACHE_PATH,
-                InfinispanExtension.getResourceDescriptionResolver(ModelKeys.REPLICATED_CACHE),
-                ReplicatedCacheAdd.INSTANCE,
-                CacheRemove.INSTANCE, resolvePathHandler, runtimeRegistration);
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(WILDCARD_PATH);
+
+        SharedStateCacheResourceDefinition.buildTransformation(version, builder);
+    }
+
+    ReplicatedCacheResourceDefinition(ResolvePathHandler resolvePathHandler, boolean allowRuntimeOnlyRegistration) {
+        super(ModelKeys.REPLICATED_CACHE, ReplicatedCacheAddHandler.INSTANCE, CacheRemoveHandler.INSTANCE, resolvePathHandler, allowRuntimeOnlyRegistration);
     }
 }

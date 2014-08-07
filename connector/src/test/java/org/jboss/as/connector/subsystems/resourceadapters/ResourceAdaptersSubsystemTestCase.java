@@ -21,11 +21,10 @@
 */
 package org.jboss.as.connector.subsystems.resourceadapters;
 
-import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ENABLED;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.MODULE;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.RESOURCEADAPTER_NAME;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.TRACKING;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY;
-import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_DEFAULT_GROUP;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_DOMAIN;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_MAPPING_REQUIRED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
@@ -127,7 +126,7 @@ public class ResourceAdaptersSubsystemTestCase extends AbstractSubsystemBaseTest
      *
      * @throws Exception
      */
-    private void testTransformer(String subsystemXml, ModelTestControllerVersion controllerVersion, ModelVersion modelVersion) throws Exception {
+    private void testTransformer(String subsystemXml, ModelTestControllerVersion controllerVersion, final ModelVersion modelVersion) throws Exception {
         //Use the non-runtime version of the extension which will happen on the HC
         KernelServicesBuilder builder = createKernelServicesBuilder(AdditionalInitialization.MANAGEMENT)
                 .setSubsystemXmlResource(subsystemXml);
@@ -135,9 +134,11 @@ public class ResourceAdaptersSubsystemTestCase extends AbstractSubsystemBaseTest
         // Add legacy subsystems
         builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
                 .addMavenResourceURL("org.jboss.as:jboss-as-connector:" + controllerVersion.getMavenGavVersion())
+                .addMavenResourceURL("org.jboss.ironjacamar:ironjacamar-spec-api:1.1.4.Final")
+                .addMavenResourceURL("org.jboss.ironjacamar:ironjacamar-common-api:1.1.4.Final")
                 .setExtensionClassName("org.jboss.as.connector.subsystems.resourceadapters.ResourceAdaptersExtension")
                 .addOperationValidationResolve("add", PathAddress.pathAddress(
-                        PathElement.pathElement(SUBSYSTEM, mainSubsystemName),
+                        PathElement.pathElement(SUBSYSTEM, getMainSubsystemName()),
                         PathElement.pathElement("resource-adapter", "*"),
                         PathElement.pathElement("connection-definitions", "*")))
                 .excludeFromParent(SingleClassFilter.createFilter(ConnectorLogger.class))
@@ -174,7 +175,6 @@ public class ResourceAdaptersSubsystemTestCase extends AbstractSubsystemBaseTest
                                     if(! modelNode.get(Constants.RESOURCEADAPTER_NAME).get("myRA").get(Constants.CONNECTIONDEFINITIONS_NAME).get("poolName").hasDefined(Constants.APPLICATION.getName()))
                                         modelNode.get(Constants.RESOURCEADAPTER_NAME).get("myRA").get(Constants.CONNECTIONDEFINITIONS_NAME).get("poolName").get(Constants.APPLICATION.getName()).set(false);
                                 }
-
                                 return modelNode;
 
                             }
@@ -195,12 +195,14 @@ public class ResourceAdaptersSubsystemTestCase extends AbstractSubsystemBaseTest
         // Add legacy subsystems
         builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
                 .addMavenResourceURL("org.jboss.as:jboss-as-connector:" + controllerVersion.getMavenGavVersion())
+                .addMavenResourceURL("org.jboss.ironjacamar:ironjacamar-spec-api:1.1.4.Final")
+                .addMavenResourceURL("org.jboss.ironjacamar:ironjacamar-common-api:1.1.4.Final")
                 .setExtensionClassName("org.jboss.as.connector.subsystems.resourceadapters.ResourceAdaptersExtension")
                 .addOperationValidationResolve("add", PathAddress.pathAddress(
-                        PathElement.pathElement(SUBSYSTEM, mainSubsystemName),
+                        PathElement.pathElement(SUBSYSTEM, getMainSubsystemName()),
                         PathElement.pathElement("resource-adapter", "*"),
                         PathElement.pathElement("connection-definitions", "*")))
-                .excludeFromParent(SingleClassFilter.createFilter(ConnectorLogger.class));
+                .excludeFromParent(SingleClassFilter.createFilter(ConnectorLogger.class)).skipReverseControllerCheck();
 
         KernelServices mainServices = builder.build();
         org.junit.Assert.assertTrue(mainServices.isSuccessfulBoot());
@@ -235,9 +237,46 @@ public class ResourceAdaptersSubsystemTestCase extends AbstractSubsystemBaseTest
 
 
                         })
+                .addFailedAttribute(subsystemAddress.append(PathElement.pathElement(RESOURCEADAPTER_NAME), ConnectionDefinitionResourceDefinition.PATH),
+                        FailedOperationTransformationConfig.ChainedConfig.createBuilder(Constants.CONNECTABLE, Constants.TRACKING)
+                                .addConfig(new FailedOperationTransformationConfig.RejectExpressionsConfig(Constants.CONNECTABLE) {
 
-        );
- }
+                                    @Override
+                                    protected boolean checkValue(String attrName, ModelNode attribute, boolean isWriteAttribute) {
+                                        if (super.checkValue(attrName, attribute, isWriteAttribute)) {
+                                            return true;
+                                        }
+                                        return attribute.asBoolean();
+                                    }
+
+                                    @Override
+                                    protected ModelNode correctValue(ModelNode toResolve, boolean isWriteAttribute) {
+                                        return new ModelNode(false);
+                                    }
+
+                                })
+                                .addConfig(new FailedOperationTransformationConfig.AttributesPathAddressConfig(TRACKING.getName()) {
+
+                                    @Override
+                                    protected boolean isAttributeWritable(String attributeName) {
+                                        return false;
+                                    }
+
+                                    @Override
+                                    protected boolean checkValue(String attrName, ModelNode attribute, boolean isWriteAttribute) {
+                                        if (attribute.isDefined()) {
+                                            return true;
+                                        } else {
+                                            return false;
+                                        }
+                                    }
+
+                                    @Override
+                                    protected ModelNode correctValue(ModelNode toResolve, boolean isWriteAttribute) {
+                                        return new ModelNode();
+                                    }
+                                }).build()));
+    }
 
     protected AdditionalInitialization createAdditionalInitialization() {
         return AdditionalInitialization.MANAGEMENT;

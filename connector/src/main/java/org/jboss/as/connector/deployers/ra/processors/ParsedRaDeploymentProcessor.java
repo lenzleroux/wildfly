@@ -23,13 +23,13 @@
 package org.jboss.as.connector.deployers.ra.processors;
 
 import static org.jboss.as.connector.logging.ConnectorLogger.DEPLOYMENT_CONNECTOR_LOGGER;
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
 
 import org.jboss.as.connector.annotations.repository.jandex.JandexAnnotationRepositoryImpl;
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.metadata.xmldescriptors.ConnectorXmlDescriptor;
 import org.jboss.as.connector.metadata.xmldescriptors.IronJacamarXmlDescriptor;
 import org.jboss.as.connector.services.mdr.AS7MetadataRepository;
@@ -59,8 +59,8 @@ import org.jboss.as.server.deployment.module.ResourceRoot;
 import org.jboss.dmr.ModelNode;
 import org.jboss.jandex.Index;
 import org.jboss.jca.common.annotations.Annotations;
-import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
-import org.jboss.jca.common.api.metadata.ra.Connector;
+import org.jboss.jca.common.api.metadata.resourceadapter.Activation;
+import org.jboss.jca.common.api.metadata.spec.Connector;
 import org.jboss.jca.common.metadata.merge.Merger;
 import org.jboss.jca.common.spi.annotations.repository.AnnotationRepository;
 import org.jboss.jca.core.api.connectionmanager.ccm.CachedConnectionManager;
@@ -118,7 +118,7 @@ public class ParsedRaDeploymentProcessor implements DeploymentUnitProcessor {
 
         final Module module = deploymentUnit.getAttachment(Attachments.MODULE);
         if (module == null)
-            throw MESSAGES.failedToGetModuleAttachment(phaseContext.getDeploymentUnit());
+            throw ConnectorLogger.ROOT_LOGGER.failedToGetModuleAttachment(phaseContext.getDeploymentUnit());
 
         DEPLOYMENT_CONNECTOR_LOGGER.debugf("ParsedRaDeploymentProcessor: Processing=%s", deploymentUnit);
 
@@ -180,7 +180,7 @@ public class ParsedRaDeploymentProcessor implements DeploymentUnitProcessor {
     public static ServiceBuilder process(final ConnectorXmlDescriptor connectorXmlDescriptor, final IronJacamarXmlDescriptor ironJacamarXmlDescriptor, final ClassLoader classLoader, final ServiceTarget serviceTarget, final Map<ResourceRoot, Index> annotationIndexes, final ServiceName duServiceName, final ServiceVerificationHandler verificationHandler) throws DeploymentUnitProcessingException {
 
         Connector cmd = connectorXmlDescriptor != null ? connectorXmlDescriptor.getConnector() : null;
-        final IronJacamar ijmd = ironJacamarXmlDescriptor != null ? ironJacamarXmlDescriptor.getIronJacamar() : null;
+        final Activation activation = ironJacamarXmlDescriptor != null ? ironJacamarXmlDescriptor.getIronJacamar() : null;
 
         try {
             // Annotation merging
@@ -206,11 +206,11 @@ public class ParsedRaDeploymentProcessor implements DeploymentUnitProcessor {
                 cmd.validate();
 
                 // Merge metadata
-                cmd = (new Merger()).mergeConnectorWithCommonIronJacamar(ijmd, cmd);
+                cmd = (new Merger()).mergeConnectorWithCommonIronJacamar(activation, cmd);
             }
 
             final ServiceName deployerServiceName = ConnectorServices.RESOURCE_ADAPTER_DEPLOYER_SERVICE_PREFIX.append(connectorXmlDescriptor.getDeploymentName());
-            final ResourceAdapterDeploymentService raDeploymentService = new ResourceAdapterDeploymentService(connectorXmlDescriptor, cmd, ijmd, classLoader, deployerServiceName, duServiceName);
+            final ResourceAdapterDeploymentService raDeploymentService = new ResourceAdapterDeploymentService(connectorXmlDescriptor, cmd, activation, classLoader, deployerServiceName, duServiceName);
 
 
             // Create the service

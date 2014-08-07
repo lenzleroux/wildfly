@@ -23,8 +23,10 @@
 package org.jboss.as.service;
 
 import java.lang.reflect.Method;
+import java.util.List;
 
-import org.jboss.msc.service.ServiceName;
+import org.jboss.as.server.deployment.SetupAction;
+import org.jboss.as.service.logging.SarLogger;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
@@ -40,8 +42,8 @@ final class StartStopService extends AbstractService {
     private final Method startMethod;
     private final Method stopMethod;
 
-    StartStopService(final Object mBeanInstance, final Method startMethod, final Method stopMethod, final ServiceName duServiceName, final ClassLoader mbeanContextClassLoader) {
-        super(mBeanInstance, duServiceName, mbeanContextClassLoader);
+    StartStopService(final Object mBeanInstance, final Method startMethod, final Method stopMethod, final List<SetupAction> setupActions,  final ClassLoader mbeanContextClassLoader) {
+        super(mBeanInstance, setupActions, mbeanContextClassLoader);
         this.startMethod = startMethod;
         this.stopMethod = stopMethod;
     }
@@ -54,7 +56,7 @@ final class StartStopService extends AbstractService {
         try {
             invokeLifecycleMethod(startMethod, context);
         } catch (final Exception e) {
-            throw SarMessages.MESSAGES.failedExecutingLegacyMethod(e, "start()");
+            throw new StartException(SarLogger.ROOT_LOGGER.failedExecutingLegacyMethod("start()"), e);
         }
     }
 
@@ -66,7 +68,7 @@ final class StartStopService extends AbstractService {
         try {
             invokeLifecycleMethod(stopMethod, context);
         } catch (final Exception e) {
-            SarLogger.ROOT_LOGGER.failedExecutingLegacyMethod(e, "stop()");
+            SarLogger.ROOT_LOGGER.error(SarLogger.ROOT_LOGGER.failedExecutingLegacyMethod("stop()"), e);
         }
     }
 

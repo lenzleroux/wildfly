@@ -20,9 +20,9 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<host xmlns="urn:jboss:domain:2.0"
+<host xmlns="urn:jboss:domain:3.0"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="urn:jboss:domain:2.0 jboss-as-config_2_0.xsd"
+      xsi:schemaLocation="urn:jboss:domain:3.0 wildfly-config_3_0.xsd"
       name="failover-h2">
 
     <paths>
@@ -33,13 +33,13 @@
         <security-realms>
             <security-realm name="ManagementRealm">
                 <authentication>
-                     <local default-user="$local"/>
+                     <local default-user="$local" skip-group-loading="true"/>
                      <properties path="mgmt-users.properties" relative-to="jboss.domain.config.dir" />
                 </authentication>
             </security-realm>
             <security-realm name="ApplicationRealm">
                 <authentication>
-                     <local default-user="$local" allowed-users="*"/>
+                     <local default-user="$local" allowed-users="*" skip-group-loading="true"/>
                      <properties path="domain/configuration/application-users.properties" relative-to="jboss.home.dir" />
                 </authentication>
             </security-realm>
@@ -55,20 +55,7 @@
     </management>
 
     <domain-controller>
-        <remote host="${jboss.test.host.master.address}" port="9999" security-realm="ManagementRealm">
-            <ignored-resources type="extension">
-                <instance name="ignored"/>
-            </ignored-resources>
-            <ignored-resources type="profile">
-                <instance name="ignored"/>
-            </ignored-resources>
-            <ignored-resources type="socket-binding-group">
-                <instance name="ignored"/>
-            </ignored-resources>
-            <ignored-resources type="foo" wildcard="true">
-                <instance name="ignored"/>
-            </ignored-resources>
-        </remote>
+        <remote host="${jboss.test.host.master.address}" port="9999" security-realm="ManagementRealm"/>
     </domain-controller>
 
     <!--

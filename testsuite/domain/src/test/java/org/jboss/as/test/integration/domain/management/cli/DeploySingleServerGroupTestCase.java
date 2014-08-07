@@ -27,9 +27,8 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
-
-import org.junit.Assert;
 
 import org.jboss.as.test.integration.common.HttpRequest;
 import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
@@ -57,6 +56,9 @@ public class DeploySingleServerGroupTestCase extends AbstractCliTestBase {
 
     @BeforeClass
     public static void before() throws Exception {
+
+        CLITestSuite.createSupport(DeploySingleServerGroupTestCase.class.getSimpleName());
+
         war = ShrinkWrap.create(WebArchive.class, "SimpleServlet.war");
         war.addClass(SimpleServlet.class);
         war.addAsWebResource(new StringAsset("Version1"), "page.html");
@@ -64,7 +66,7 @@ public class DeploySingleServerGroupTestCase extends AbstractCliTestBase {
         warFile = new File(tempDir + File.separator + "SimpleServlet.war");
         new ZipExporterImpl(war).exportTo(warFile, true);
 
-        serverGroups = CLITestSuite.serverGroups.keySet().toArray(new String[0]);
+        serverGroups = CLITestSuite.serverGroups.keySet().toArray(new String[CLITestSuite.serverGroups.size()]);
 
         AbstractCliTestBase.initCLI(DomainTestSupport.masterAddress);
     }
@@ -72,13 +74,23 @@ public class DeploySingleServerGroupTestCase extends AbstractCliTestBase {
     @AfterClass
     public static void after() throws Exception {
         AbstractCliTestBase.closeCLI();
-        Assert.assertTrue(warFile.delete());
+        if (warFile!=null) {
+            warFile.delete();
+        }
+
+        CLITestSuite.stopSupport();
     }
 
     @Test
     public void testDeployRedeployUndeploy() throws Exception {
         testDeploy();
         testRedeploy();
+        testUndeploy();
+    }
+
+    @Test
+    public void testContentObjectDeploy() throws Exception {
+        testWFLY3184();
         testUndeploy();
     }
 
@@ -122,13 +134,25 @@ public class DeploySingleServerGroupTestCase extends AbstractCliTestBase {
         checkURL("/SimpleServlet/SimpleServlet" , "SimpleServlet", serverGroups[0], true);
     }
 
+    private void testWFLY3184() throws Exception {
+
+        // deploy to server
+        cli.sendLine("/deployment="+ warFile.getName() +":add(content={url=" + warFile.toURI().toURL().toExternalForm() + "})");
+        cli.sendLine("/server-group=" + serverGroups[0] + "/deployment="+ warFile.getName() +":add(enabled=true)");
+
+        // check that the deployment is available on all servers within the group and none outside
+        checkURL("/SimpleServlet/SimpleServlet", "SimpleServlet", serverGroups[0]);
+        checkURL("/SimpleServlet/SimpleServlet", "SimpleServlet", serverGroups[1], true);
+
+    }
+
     private void checkURL(String path, String content, String serverGroup) throws Exception {
         checkURL(path, content, serverGroup, false);
     }
     private void checkURL(String path, String content, String serverGroup, boolean shouldFail) throws Exception {
 
         ArrayList<String> groupServers  = new ArrayList<String>();
-        for (String server : CLITestSuite.serverGroups.get(serverGroup)) groupServers.add(server);
+        Collections.addAll(groupServers, CLITestSuite.serverGroups.get(serverGroup));
 
         for (String host : CLITestSuite.hostAddresses.keySet()) {
             String address = CLITestSuite.hostAddresses.get(host);

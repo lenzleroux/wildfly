@@ -22,7 +22,6 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 import static org.jboss.as.connector.subsystems.datasources.Constants.JNDI_NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ENABLED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
@@ -30,11 +29,13 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_
 import java.util.LinkedList;
 import java.util.List;
 
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.dmr.ModelNode;
@@ -60,10 +61,15 @@ public class DataSourceDisable implements OperationStepHandler {
 
     public void execute(OperationContext context, ModelNode operation) {
 
-        final ModelNode model = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS).getModel();
+        final ManagementResourceRegistration datasourceRegistration = context.getResourceRegistrationForUpdate();
+        final Resource resource = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS);
+        final ModelNode model = resource.getModel();
         model.get(ENABLED).set(false);
 
         if (context.isNormalServer()) {
+
+            DataSourceStatisticsListener.removeStatisticsResources(resource);
+
             if (context.isResourceServiceRestartAllowed()) {
                 context.addStep(new OperationStepHandler() {
                     public void execute(final OperationContext context, ModelNode operation) throws OperationFailedException {
@@ -80,10 +86,10 @@ public class DataSourceDisable implements OperationStepHandler {
                             if (ServiceController.State.UP.equals(dataSourceController.getState())) {
                                 dataSourceController.setMode(ServiceController.Mode.NEVER);
                             } else {
-                                throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceNotEnabled("Data-source", dsName)));
+                                throw new OperationFailedException(new ModelNode().set(ConnectorLogger.ROOT_LOGGER.serviceNotEnabled("Data-source", dsName)));
                             }
                         } else {
-                            throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceNotAvailable("Data-source", dsName)));
+                            throw new OperationFailedException(new ModelNode().set(ConnectorLogger.ROOT_LOGGER.serviceNotAvailable("Data-source", dsName)));
                         }
 
                         final ServiceName referenceServiceName = DataSourceReferenceFactoryService.SERVICE_NAME_BASE.append(dsName);
@@ -118,10 +124,10 @@ public class DataSourceDisable implements OperationStepHandler {
                                     if (ServiceController.State.UP.equals(connPropertyController.getState())) {
                                         connPropertyController.setMode(ServiceController.Mode.NEVER);
                                     } else {
-                                        throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceAlreadyStarted("Data-source.connectionProperty", name)));
+                                        throw new OperationFailedException(new ModelNode().set(ConnectorLogger.ROOT_LOGGER.serviceAlreadyStarted("Data-source.connectionProperty", name)));
                                     }
                                 } else {
-                                    throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceNotAvailable("Data-source.connectionProperty", name)));
+                                    throw new OperationFailedException(new ModelNode().set(ConnectorLogger.ROOT_LOGGER.serviceNotAvailable("Data-source.connectionProperty", name)));
                                 }
                             }
                             if (xaDataSourceConfigServiceName.append("xa-datasource-properties").isParentOf(name)) {
@@ -131,10 +137,10 @@ public class DataSourceDisable implements OperationStepHandler {
                                     if (ServiceController.State.UP.equals(xaConfigPropertyController.getState())) {
                                         xaConfigPropertyController.setMode(ServiceController.Mode.NEVER);
                                     } else {
-                                        throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceAlreadyStarted("Data-source.xa-config-property", name)));
+                                        throw new OperationFailedException(new ModelNode().set(ConnectorLogger.ROOT_LOGGER.serviceAlreadyStarted("Data-source.xa-config-property", name)));
                                     }
                                 } else {
-                                    throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceNotAvailable("Data-source.xa-config-property", name)));
+                                    throw new OperationFailedException(new ModelNode().set(ConnectorLogger.ROOT_LOGGER.serviceNotAvailable("Data-source.xa-config-property", name)));
                                 }
                             }
                         }
@@ -152,9 +158,9 @@ public class DataSourceDisable implements OperationStepHandler {
                             @Override
                             public void handleRollback(OperationContext context, ModelNode operation) {
                                 try {
-                                    reEnable(context,operation);
+                                    reEnable(context, operation, datasourceRegistration);
                                 } catch (OperationFailedException e) {
-
+                                    // ignored
                                 }
                             }
                         });
@@ -173,14 +179,15 @@ public class DataSourceDisable implements OperationStepHandler {
         context.stepCompleted();
     }
 
-    public void reEnable(final OperationContext context, final ModelNode operation) throws OperationFailedException {
+    private void reEnable(final OperationContext context, final ModelNode operation, final ManagementResourceRegistration datasourceRegistration) throws OperationFailedException {
         if (context.isNormalServer()) {
             PathAddress addr = PathAddress.pathAddress(operation.get(OP_ADDR));
             Resource resource = context.getOriginalRootResource();
             for (PathElement element : addr) {
                 resource = resource.getChild(element);
             }
-            DataSourceEnable.addServices(context, operation, null, Resource.Tools.readModel(resource), isXa(), new LinkedList<ServiceController<?>>());
+            DataSourceEnable.addServices(context, operation, null, datasourceRegistration,
+                    Resource.Tools.readModel(resource), isXa(), new LinkedList<ServiceController<?>>());
         }
     }
 

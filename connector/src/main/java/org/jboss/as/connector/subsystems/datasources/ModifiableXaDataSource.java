@@ -22,20 +22,20 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
+import java.util.Map;
+
 import org.jboss.jca.common.CommonBundle;
 import org.jboss.jca.common.api.metadata.common.Recovery;
 import org.jboss.jca.common.api.metadata.ds.DsSecurity;
+import org.jboss.jca.common.api.metadata.ds.DsXaPool;
 import org.jboss.jca.common.api.metadata.ds.Statement;
 import org.jboss.jca.common.api.metadata.ds.TimeOut;
 import org.jboss.jca.common.api.metadata.ds.TransactionIsolation;
 import org.jboss.jca.common.api.metadata.ds.Validation;
-import org.jboss.jca.common.api.metadata.ds.v12.DsXaPool;
-import org.jboss.jca.common.api.metadata.ds.v12.XaDataSource;
+import org.jboss.jca.common.api.metadata.ds.XaDataSource;
 import org.jboss.jca.common.api.validator.ValidateException;
-import org.jboss.jca.common.metadata.ds.v12.XADataSourceImpl;
+import org.jboss.jca.common.metadata.ds.XADataSourceImpl;
 import org.jboss.logging.Messages;
-
-import java.util.Map;
 
 /**
  * A modifiable DataSourceImpl to add connection properties
@@ -81,10 +81,12 @@ public class ModifiableXaDataSource extends XADataSourceImpl implements XaDataSo
     public ModifiableXaDataSource(TransactionIsolation transactionIsolation, TimeOut timeOut, DsSecurity security,
                                   Statement statement, Validation validation, String urlDelimiter, String urlProperty, String urlSelectorStrategyClassName,
                                   Boolean useJavaContext, String poolName, Boolean enabled, String jndiName, Boolean spy, Boolean useCcm,
+                                  final Boolean connectable, final Boolean tracking,
                                   Map<String, String> xaDataSourceProperty, String xaDataSourceClass, String driver, String newConnectionSql,
                                   DsXaPool xaPool, Recovery recovery) throws ValidateException {
         super(transactionIsolation, timeOut, security, statement, validation, urlDelimiter,
                 urlProperty, urlSelectorStrategyClassName, useJavaContext, poolName, enabled, jndiName, spy, useCcm,
+                connectable, tracking,
                 xaDataSourceProperty, xaDataSourceClass, driver, newConnectionSql, xaPool, recovery);
     }
 
@@ -107,7 +109,7 @@ public class ModifiableXaDataSource extends XADataSourceImpl implements XaDataSo
 
         return new XADataSourceImpl(transactionIsolation, timeOut, security,
                 statement, validation, urlDelimiter, urlProperty, urlSelectorStrategyClassName,
-                useJavaContext, poolName, enabled, jndiName, spy, useCcm,
+                useJavaContext, poolName, enabled, jndiName, spy, useCcm, connectable, tracking,
                 xaDataSourceProperty, xaDataSourceClass, driver, newConnectionSql,
                 getXaPool(), recovery);
 

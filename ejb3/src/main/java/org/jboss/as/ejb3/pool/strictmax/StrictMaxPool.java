@@ -21,13 +21,14 @@
  */
 package org.jboss.as.ejb3.pool.strictmax;
 
-import static org.jboss.as.ejb3.EjbLogger.ROOT_LOGGER;
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+import static org.jboss.as.ejb3.logging.EjbLogger.ROOT_LOGGER;
 
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.pool.AbstractPool;
 import org.jboss.as.ejb3.pool.StatelessObjectFactory;
 
-import java.util.LinkedList;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -58,12 +59,12 @@ public class StrictMaxPool<T> extends AbstractPool<T> {
      * The pool data structure
      * Guarded by the implicit lock for "pool"
      */
-    private final LinkedList<T> pool = new LinkedList<T>();
+    private final Queue<T> pool = new ConcurrentLinkedQueue<T>();
 
     public StrictMaxPool(StatelessObjectFactory<T> factory, int maxSize, long timeout, TimeUnit timeUnit) {
         super(factory);
         this.maxSize = maxSize;
-        this.semaphore = new Semaphore(maxSize, true);
+        this.semaphore = new Semaphore(maxSize, false);
         this.timeout = timeout;
         this.timeUnit = timeUnit;
     }
@@ -93,7 +94,7 @@ public class StrictMaxPool<T> extends AbstractPool<T> {
     }
 
     public void setMaxSize(int maxSize) {
-        throw MESSAGES.methodNotImplemented();
+        throw EjbLogger.ROOT_LOGGER.methodNotImplemented();
     }
 
     /**
@@ -106,18 +107,18 @@ public class StrictMaxPool<T> extends AbstractPool<T> {
         try {
             boolean acquired = semaphore.tryAcquire(timeout, timeUnit);
             if (!acquired)
-                throw MESSAGES.failedToAcquirePermit(timeout, timeUnit);
+                throw EjbLogger.ROOT_LOGGER.failedToAcquirePermit(timeout, timeUnit);
         } catch (InterruptedException e) {
-            throw MESSAGES.acquireSemaphoreInterrupted();
+            throw EjbLogger.ROOT_LOGGER.acquireSemaphoreInterrupted();
         }
 
-        synchronized (pool) {
-            if (!pool.isEmpty()) {
-                return pool.removeFirst();
-            }
+        T bean = pool.poll();
+
+        if( bean !=null) {
+            //we found a bean instance in the pool, return it
+            return bean;
         }
 
-        T bean = null;
         try {
             // Pool is empty, create an instance
             bean = create();
@@ -143,17 +144,8 @@ public class StrictMaxPool<T> extends AbstractPool<T> {
             ROOT_LOGGER.tracef("%s/%s Free instance: %s", pool.size(), maxSize, this);
         }
 
-        boolean destroyIt = false;
-        synchronized (pool) {
-            // Add the unused context back into the pool
-            if (pool.size() < maxSize)
-                pool.add(obj);
-            else
-                destroyIt = true;
-        }
-        if (destroyIt)
-            destroy(obj);
-        // If we block when maxSize instances are in use, invoke release on strictMaxSize
+        pool.add(obj);
+
         semaphore.release();
     }
 
@@ -175,11 +167,8 @@ public class StrictMaxPool<T> extends AbstractPool<T> {
     }
 
     public void stop() {
-        synchronized (pool) {
-            for (T obj : pool) {
-                destroy(obj);
-            }
-            pool.clear();
+        for (T obj = pool.poll(); obj != null; obj = pool.poll()) {
+            destroy(obj);
         }
     }
 }

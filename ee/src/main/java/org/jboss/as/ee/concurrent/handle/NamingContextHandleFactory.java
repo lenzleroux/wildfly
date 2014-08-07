@@ -21,7 +21,7 @@
  */
 package org.jboss.as.ee.concurrent.handle;
 
-import org.jboss.as.ee.EeMessages;
+import org.jboss.as.ee.logging.EeLogger;
 import org.jboss.as.naming.WritableServiceBasedNamingStore;
 import org.jboss.as.naming.context.NamespaceContextSelector;
 import org.jboss.msc.service.ServiceName;
@@ -50,7 +50,7 @@ public class NamingContextHandleFactory implements ContextHandleFactory {
     }
 
     @Override
-    public ContextHandle saveContext(ContextService contextService, Map<String, String> contextObjectProperties) {
+    public SetupContextHandle saveContext(ContextService contextService, Map<String, String> contextObjectProperties) {
         return new NamingContextHandle(namespaceContextSelector,duServiceName);
     }
 
@@ -65,15 +65,15 @@ public class NamingContextHandleFactory implements ContextHandleFactory {
     }
 
     @Override
-    public void writeHandle(ContextHandle contextHandle, ObjectOutputStream out) throws IOException {
+    public void writeSetupContextHandle(SetupContextHandle contextHandle, ObjectOutputStream out) throws IOException {
     }
 
     @Override
-    public ContextHandle readHandle(ObjectInputStream in) throws IOException, ClassNotFoundException {
+    public SetupContextHandle readSetupContextHandle(ObjectInputStream in) throws IOException, ClassNotFoundException {
         return new NamingContextHandle(namespaceContextSelector,duServiceName);
     }
 
-    private static class NamingContextHandle implements ContextHandle {
+    private static class NamingContextHandle implements SetupContextHandle, ResetContextHandle {
 
         private final NamespaceContextSelector namespaceContextSelector;
         private final ServiceName duServiceName;
@@ -89,13 +89,14 @@ public class NamingContextHandleFactory implements ContextHandleFactory {
         }
 
         @Override
-        public void setup() throws IllegalStateException {
+        public ResetContextHandle setup() throws IllegalStateException {
             if(namespaceContextSelector != null) {
                 NamespaceContextSelector.pushCurrentSelector(namespaceContextSelector);
             }
             if(duServiceName != null) {
                 WritableServiceBasedNamingStore.pushOwner(duServiceName);
             }
+            return this;
         }
 
         @Override
@@ -111,11 +112,12 @@ public class NamingContextHandleFactory implements ContextHandleFactory {
         // serialization
 
         private void writeObject(ObjectOutputStream out) throws IOException {
-            throw EeMessages.MESSAGES.serializationMustBeHandledByThefactory();
+            throw EeLogger.ROOT_LOGGER.serializationMustBeHandledByTheFactory();
         }
 
         private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            throw EeMessages.MESSAGES.serializationMustBeHandledByThefactory();
+            throw EeLogger.ROOT_LOGGER.serializationMustBeHandledByTheFactory();
         }
     }
+
 }

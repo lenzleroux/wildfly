@@ -22,9 +22,7 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
-import org.jboss.as.connector.dynamicresource.descriptionproviders.StatisticsDescriptionProvider;
-import org.jboss.as.connector.dynamicresource.operations.ClearStatisticsHandler;
-import org.jboss.as.connector.subsystems.common.pool.PoolMetrics;
+import org.jboss.as.connector.dynamicresource.StatisticsResourceDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.PlaceholderResource;
@@ -35,26 +33,22 @@ import org.jboss.msc.service.AbstractServiceListener;
 import org.jboss.msc.service.ServiceController;
 
 /**
-*
  * Listener that registers data source statistics with the management model
- *
-*/
+ */
 public class DataSourceStatisticsListener extends AbstractServiceListener<Object> {
 
     private static final PathElement JDBC_STATISTICS = PathElement.pathElement("statistics", "jdbc");
     private static final PathElement POOL_STATISTICS = PathElement.pathElement("statistics", "pool");
 
     private final ManagementResourceRegistration overrideRegistration;
-    private final Resource resource;
-    private final String dsName;
+    private final boolean statsEnabled;
 
-    public DataSourceStatisticsListener(final ManagementResourceRegistration overrideRegistration, Resource resource, final String dsName) {
+    public DataSourceStatisticsListener(final ManagementResourceRegistration overrideRegistration, final boolean statsEnabled) {
         this.overrideRegistration = overrideRegistration;
-        this.resource = resource;
-        this.dsName = dsName;
+        this.statsEnabled = statsEnabled;
     }
 
-    public void transition(final ServiceController<? extends Object> controller,
+    public void transition(final ServiceController<?> controller,
                            final ServiceController.Transition transition) {
 
         switch (transition) {
@@ -64,32 +58,21 @@ public class DataSourceStatisticsListener extends AbstractServiceListener<Object
 
                 StatisticsPlugin jdbcStats = deploymentMD.getDataSources()[0].getStatistics();
                 StatisticsPlugin poolStats = deploymentMD.getDataSources()[0].getPool().getStatistics();
+                jdbcStats.setEnabled(statsEnabled);
+                poolStats.setEnabled(statsEnabled);
+
                 int jdbcStatsSize = jdbcStats.getNames().size();
                 int poolStatsSize = poolStats.getNames().size();
                 if (jdbcStatsSize > 0 || poolStatsSize > 0) {
                     if (overrideRegistration != null) {
                         if (jdbcStatsSize > 0) {
-                            ManagementResourceRegistration jdbcRegistration = overrideRegistration.registerSubModel(JDBC_STATISTICS, new StatisticsDescriptionProvider(DataSourcesSubsystemProviders.RESOURCE_NAME, "statistics", jdbcStats));
+                            ManagementResourceRegistration jdbcRegistration = overrideRegistration.registerSubModel(new StatisticsResourceDefinition(JDBC_STATISTICS,DataSourcesSubsystemProviders.RESOURCE_NAME, jdbcStats));
                             jdbcRegistration.setRuntimeOnly(true);
-                            jdbcRegistration.registerOperationHandler(Constants.CLEAR_STATISTICS, new ClearStatisticsHandler(jdbcStats));
-
-                            for (String statName : jdbcStats.getNames()) {
-                                jdbcRegistration.registerMetric(statName, new PoolMetrics.ParametrizedPoolMetricsHandler(jdbcStats));
-                            }
-
-                            resource.registerChild(JDBC_STATISTICS, new PlaceholderResource.PlaceholderResourceEntry(JDBC_STATISTICS));
                         }
 
                         if (poolStatsSize > 0) {
-                            ManagementResourceRegistration poolRegistration = overrideRegistration.registerSubModel(POOL_STATISTICS, new StatisticsDescriptionProvider(DataSourcesSubsystemProviders.RESOURCE_NAME, "statistics", poolStats));
+                            ManagementResourceRegistration poolRegistration = overrideRegistration.registerSubModel(new StatisticsResourceDefinition(POOL_STATISTICS, DataSourcesSubsystemProviders.RESOURCE_NAME, poolStats));
                             poolRegistration.setRuntimeOnly(true);
-                            poolRegistration.registerOperationHandler(Constants.CLEAR_STATISTICS, new ClearStatisticsHandler(poolStats));
-
-                            for (String statName : poolStats.getNames()) {
-                                poolRegistration.registerMetric(statName, new PoolMetrics.ParametrizedPoolMetricsHandler(poolStats));
-                            }
-
-                            resource.registerChild(POOL_STATISTICS, new PlaceholderResource.PlaceholderResourceEntry(JDBC_STATISTICS));
                         }
                     }
                 }
@@ -103,17 +86,27 @@ public class DataSourceStatisticsListener extends AbstractServiceListener<Object
                     overrideRegistration.unregisterSubModel(JDBC_STATISTICS);
                     overrideRegistration.unregisterSubModel(POOL_STATISTICS);
                 }
-
-                if (resource.hasChild(JDBC_STATISTICS)) {
-                    resource.removeChild(JDBC_STATISTICS);
-                }
-
-                if (resource.hasChild(POOL_STATISTICS)) {
-                    resource.removeChild(POOL_STATISTICS);
-                }
                 break;
 
             }
+        }
+    }
+
+    public static void registerStatisticsResources(Resource datasourceResource) {
+        if (!datasourceResource.hasChild(JDBC_STATISTICS)) {
+            datasourceResource.registerChild(JDBC_STATISTICS, new PlaceholderResource.PlaceholderResourceEntry(JDBC_STATISTICS));
+        }
+        if (!datasourceResource.hasChild(POOL_STATISTICS)) {
+            datasourceResource.registerChild(POOL_STATISTICS, new PlaceholderResource.PlaceholderResourceEntry(POOL_STATISTICS));
+        }
+    }
+
+    public static void removeStatisticsResources(Resource datasourceResource) {
+        if (datasourceResource.hasChild(JDBC_STATISTICS)) {
+            datasourceResource.removeChild(JDBC_STATISTICS);
+        }
+        if (datasourceResource.hasChild(POOL_STATISTICS)) {
+            datasourceResource.removeChild(POOL_STATISTICS);
         }
     }
 }

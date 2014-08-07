@@ -29,6 +29,7 @@ import java.util.TimeZone;
 
 import javax.ejb.ScheduleExpression;
 
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.timerservice.schedule.attribute.DayOfMonth;
 import org.jboss.as.ejb3.timerservice.schedule.attribute.DayOfWeek;
 import org.jboss.as.ejb3.timerservice.schedule.attribute.Hour;
@@ -37,13 +38,14 @@ import org.jboss.as.ejb3.timerservice.schedule.attribute.Month;
 import org.jboss.as.ejb3.timerservice.schedule.attribute.Second;
 import org.jboss.as.ejb3.timerservice.schedule.attribute.Year;
 
-import static org.jboss.as.ejb3.EjbLogger.ROOT_LOGGER;
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+import static org.jboss.as.ejb3.logging.EjbLogger.ROOT_LOGGER;
+
 /**
  * CalendarBasedTimeout
  *
  * @author Jaikiran Pai
  * @author "<a href=\"mailto:wfink@redhat.com\">Wolf-Dieter Fink</a>"
+ * @author Eduardo Martins
  * @version $Revision: $
  */
 public class CalendarBasedTimeout {
@@ -112,7 +114,7 @@ public class CalendarBasedTimeout {
      */
     public CalendarBasedTimeout(ScheduleExpression schedule) {
         if (schedule == null) {
-            throw MESSAGES.invalidScheduleExpression(this.getClass().getName());
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpression(this.getClass().getName());
         }
         // make sure that the schedule doesn't have null values for its various attributes
         this.nullCheckScheduleAttributes(schedule);
@@ -300,7 +302,7 @@ public class CalendarBasedTimeout {
             return currentCal;
         }
 
-        Calendar nextCal = this.copy(currentCal);
+        Calendar nextCal = this.truncate(currentCal, Calendar.MINUTE);
         // At this point, a suitable "next" second has been identified.
         // There can be 2 cases
         // 1) The "next" second is greater than the current second : This
@@ -320,7 +322,6 @@ public class CalendarBasedTimeout {
             nextCal.set(Calendar.SECOND, nextSecond);
             // advance the minute to next minute
             nextCal.add(Calendar.MINUTE, 1);
-
             return nextCal;
         }
 
@@ -344,7 +345,7 @@ public class CalendarBasedTimeout {
             return currentCal;
         }
 
-        Calendar nextCal = this.copy(currentCal);
+        Calendar nextCal = this.truncate(currentCal, Calendar.HOUR_OF_DAY);
         // At this point, a suitable "next" minute has been identified.
         // There can be 2 cases
         // 1) The "next" minute is greater than the current minute : This
@@ -397,7 +398,7 @@ public class CalendarBasedTimeout {
             return currentCal;
         }
 
-        Calendar nextCal = this.copy(currentCal);
+        Calendar nextCal = this.truncate(currentCal, Calendar.DATE);
         // At this point, a suitable "next" hour has been identified.
         // There can be 2 cases
         // 1) The "next" hour is greater than the current hour : This
@@ -457,7 +458,7 @@ public class CalendarBasedTimeout {
             return currentCal;
         }
 
-        Calendar nextCal = this.copy(currentCal);
+        Calendar nextCal = this.truncate(currentCal, Calendar.WEEK_OF_MONTH);
         // At this point, a suitable "next" day-of-week has been identified.
         // There can be 2 cases
         // 1) The "next" day-of-week is greater than the current day-of-week : This
@@ -465,19 +466,11 @@ public class CalendarBasedTimeout {
         // 2) The "next" day-of-week is lesser than the current day-of-week : This implies
         // that the next day-of-week is in the next week (i.e. current week needs to
         // be advanced to next week).
-
-        // handle case#1
-        if (nextDayOfWeek > currentDayOfWeek) {
-            // set the chosen day-of-week
-            int dayDiff = nextDayOfWeek - currentDayOfWeek;
-            nextCal.add(Calendar.DAY_OF_MONTH, dayDiff);
-        } else {
-            // case#2 nextDayOfWeek < currentDayOfWeek
-            // set the chosen day-of-week
-            nextCal.set(Calendar.DAY_OF_WEEK, nextDayOfWeek);
-            // advance to next week
+        nextCal.set(Calendar.DAY_OF_WEEK, nextDayOfWeek);
+        if (nextDayOfWeek < currentDayOfWeek) {
             nextCal.add(Calendar.WEEK_OF_MONTH, 1);
         }
+
         // since we are moving to a different day-of-week (as compared to the current day-of-week),
         // we should reset the second, minute and hour appropriately, to their first possible
         // values
@@ -508,7 +501,7 @@ public class CalendarBasedTimeout {
             return currentCal;
         }
 
-        Calendar nextCal = this.copy(currentCal);
+        Calendar nextCal = this.truncate(currentCal, Calendar.YEAR);
         // At this point, a suitable "next" month has been identified.
         // There can be 2 cases
         // 1) The "next" month is greater than the current month : This
@@ -600,7 +593,7 @@ public class CalendarBasedTimeout {
             return currentCal;
         }
 
-        Calendar nextCal = this.copy(currentCal);
+        Calendar nextCal = this.truncate(currentCal, Calendar.MONTH);
 
         if (nextDayOfMonth > currentDayOfMonth) {
             if (this.monthHasDate(nextCal, nextDayOfMonth)) {
@@ -660,7 +653,7 @@ public class CalendarBasedTimeout {
             return null;
         }
 
-        Calendar nextCal = this.copy(currentCal);
+        Calendar nextCal = this.truncate(currentCal, Calendar.ERA);
         // at this point we have chosen a year which is greater than the current
         // year.
         // set the chosen year
@@ -683,7 +676,11 @@ public class CalendarBasedTimeout {
     }
 
     private Calendar advanceTillMonthHasDate(Calendar cal, Integer date) {
-        Calendar copy = this.copy(cal);
+        Calendar copy = this.truncate(cal, Calendar.MONTH);
+        copy.set(Calendar.SECOND, this.second.getFirst());
+        copy.set(Calendar.MINUTE, this.minute.getFirst());
+        copy.set(Calendar.HOUR_OF_DAY, this.hour.getFirst());
+
         // make sure the month can handle the date
         while (monthHasDate(copy, date) == false) {
             if (copy.get(Calendar.YEAR) > Year.MAX_YEAR) {
@@ -700,11 +697,6 @@ public class CalendarBasedTimeout {
             if (date == null) {
                 return null;
             }
-
-            copy.set(Calendar.SECOND, this.second.getFirst());
-            copy.set(Calendar.MINUTE, this.minute.getFirst());
-            copy.set(Calendar.HOUR_OF_DAY, this.hour.getFirst());
-
         }
         copy.set(Calendar.DAY_OF_MONTH, date);
         return copy;
@@ -712,23 +704,27 @@ public class CalendarBasedTimeout {
 
     private Calendar copy(Calendar cal) {
         Calendar copy = new GregorianCalendar(cal.getTimeZone());
-        copy.setTime(cal.getTime());
+        copy.setTimeInMillis(cal.getTimeInMillis());
 
         return copy;
     }
 
-    private boolean monthHasDate(Calendar cal, int date) {
-        Calendar tmpCal = new GregorianCalendar(cal.getTimeZone());
-        tmpCal.set(Calendar.YEAR, cal.get(Calendar.YEAR));
-        tmpCal.set(Calendar.MONTH, cal.get(Calendar.MONTH));
-        tmpCal.set(Calendar.DAY_OF_MONTH, 1);
-        int maximumPossibleDateForTheMonth = tmpCal.getActualMaximum(Calendar.DAY_OF_MONTH);
-
-        if (date > maximumPossibleDateForTheMonth) {
-            return false;
+    private Calendar truncate(Calendar cal, int field) {
+        Calendar copy = new GregorianCalendar(cal.getTimeZone());
+        copy.clear();
+        for(int i=0; i <= field; i++) {
+            if(cal.isSet(i)) {
+                copy.set(i, cal.get(i));
+            }
         }
-        return true;
+        // set that week starts on SUNDAY (as is done in #setFirstTimeout())
+        // to be able to compare dates' day of week correctly
+        copy.setFirstDayOfWeek(Calendar.SUNDAY);
+        return copy;
+    }
 
+    private boolean monthHasDate(Calendar cal, int date) {
+        return date <= cal.getActualMaximum(Calendar.DAY_OF_MONTH);
     }
 
     private boolean isAfterEnd(Calendar cal) {
@@ -757,25 +753,25 @@ public class CalendarBasedTimeout {
 
     private void nullCheckScheduleAttributes(ScheduleExpression schedule) {
         if (schedule.getSecond() == null) {
-            throw MESSAGES.invalidScheduleExpressionSecond(schedule);
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpressionSecond(schedule);
         }
         if (schedule.getMinute() == null) {
-            throw MESSAGES.invalidScheduleExpressionMinute(schedule);
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpressionMinute(schedule);
         }
         if (schedule.getHour() == null) {
-            throw MESSAGES.invalidScheduleExpressionHour(schedule);
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpressionHour(schedule);
         }
         if (schedule.getDayOfMonth() == null) {
-            throw MESSAGES.invalidScheduleExpressionDayOfMonth(schedule);
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpressionDayOfMonth(schedule);
         }
         if (schedule.getDayOfWeek() == null) {
-            throw MESSAGES.invalidScheduleExpressionDayOfWeek(schedule);
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpressionDayOfWeek(schedule);
         }
         if (schedule.getMonth() == null) {
-            throw MESSAGES.invalidScheduleExpressionMonth(schedule);
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpressionMonth(schedule);
         }
         if (schedule.getYear() == null) {
-            throw MESSAGES.invalidScheduleExpressionYear(schedule);
+            throw EjbLogger.ROOT_LOGGER.invalidScheduleExpressionYear(schedule);
         }
     }
 

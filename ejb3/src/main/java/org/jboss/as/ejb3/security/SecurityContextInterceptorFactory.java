@@ -21,8 +21,7 @@
  */
 package org.jboss.as.ejb3.security;
 
-import static org.jboss.as.ejb3.EjbLogger.ROOT_LOGGER;
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+import static org.jboss.as.ejb3.logging.EjbLogger.ROOT_LOGGER;
 
 import java.util.Map;
 import java.util.Set;
@@ -30,8 +29,10 @@ import java.util.Set;
 import org.jboss.as.core.security.ServerSecurityManager;
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentInterceptorFactory;
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.component.EJBComponent;
 import org.jboss.as.security.service.SimpleSecurityManager;
+import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.invocation.Interceptor;
 import org.jboss.invocation.InterceptorFactoryContext;
 import org.jboss.metadata.javaee.spec.SecurityRolesMetaData;
@@ -45,20 +46,34 @@ public class SecurityContextInterceptorFactory extends ComponentInterceptorFacto
 
     private final boolean securityRequired;
     private final boolean propagateSecurity;
+    private final String policyContextID;
 
-    public SecurityContextInterceptorFactory(final boolean securityRequired) {
-        this(securityRequired, true);
+    public static String contextIdForDeployment(final DeploymentUnit du) {
+        String contextID = du.getName();
+        if (du.getParent() != null) {
+            contextID = du.getParent().getName() + "!" + contextID;
+        }
+        return contextID;
+    }
+
+    public SecurityContextInterceptorFactory(final boolean securityRequired, final String policyContextID) {
+        this(securityRequired, true, policyContextID);
     }
 
     public SecurityContextInterceptorFactory(final boolean securityRequired, final boolean propagateSecurity) {
+        this(securityRequired, propagateSecurity, null);
+    }
+
+    public SecurityContextInterceptorFactory(final boolean securityRequired, final boolean propagateSecurity, final String policyContextID) {
         this.securityRequired = securityRequired;
         this.propagateSecurity = propagateSecurity;
+        this.policyContextID = policyContextID;
     }
 
     @Override
     protected Interceptor create(final Component component, final InterceptorFactoryContext context) {
         if (component instanceof EJBComponent == false) {
-            throw MESSAGES.unexpectedComponent(component, EJBComponent.class);
+            throw EjbLogger.ROOT_LOGGER.unexpectedComponent(component, EJBComponent.class);
         }
         final EJBComponent ejbComponent = (EJBComponent) component;
         final ServerSecurityManager securityManager;
@@ -88,7 +103,7 @@ public class SecurityContextInterceptorFactory extends ComponentInterceptorFacto
         }
         SecurityContextInterceptorHolder holder = new SecurityContextInterceptorHolder();
         holder.setSecurityManager(securityManager).setSecurityDomain(securityDomain)
-        .setRunAs(runAs).setRunAsPrincipal(runAsPrincipal)
+        .setRunAs(runAs).setRunAsPrincipal(runAsPrincipal).setPolicyContextID(this.policyContextID)
         .setExtraRoles(extraRoles).setPrincipalVsRolesMap(principalVsRolesMap)
         .setSkipAuthentication(securityRequired == false);
 

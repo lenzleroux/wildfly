@@ -25,7 +25,6 @@ package org.jboss.as.connector.subsystems.datasources;
 import static java.lang.Thread.currentThread;
 import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.connector.logging.ConnectorLogger.DS_DEPLOYER_LOGGER;
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -41,12 +40,10 @@ import javax.naming.Reference;
 import javax.resource.spi.ManagedConnectionFactory;
 import javax.sql.DataSource;
 
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.services.driver.InstalledDriver;
 import org.jboss.as.connector.services.driver.registry.DriverRegistry;
 import org.jboss.as.connector.util.Injection;
-import org.wildfly.security.manager.action.ClearContextClassLoaderAction;
-import org.wildfly.security.manager.action.GetClassLoaderAction;
-import org.wildfly.security.manager.action.SetContextClassLoaderFromClassAction;
 import org.jboss.jca.adapters.jdbc.BaseWrapperManagedConnectionFactory;
 import org.jboss.jca.adapters.jdbc.local.LocalManagedConnectionFactory;
 import org.jboss.jca.adapters.jdbc.spi.ClassLoaderPlugin;
@@ -59,8 +56,8 @@ import org.jboss.jca.common.api.metadata.ds.Statement;
 import org.jboss.jca.common.api.metadata.ds.TimeOut;
 import org.jboss.jca.common.api.metadata.ds.Validation;
 import org.jboss.jca.common.api.metadata.ds.XaDataSource;
-import org.jboss.jca.common.api.metadata.ra.ConfigProperty;
-import org.jboss.jca.common.api.metadata.ra.XsdString;
+import org.jboss.jca.common.api.metadata.spec.ConfigProperty;
+import org.jboss.jca.common.api.metadata.spec.XsdString;
 import org.jboss.jca.common.api.validator.ValidateException;
 import org.jboss.jca.common.metadata.ds.DatasourcesImpl;
 import org.jboss.jca.common.metadata.ds.DriverImpl;
@@ -84,6 +81,9 @@ import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.security.SubjectFactory;
 import org.wildfly.security.manager.WildFlySecurityManager;
+import org.wildfly.security.manager.action.ClearContextClassLoaderAction;
+import org.wildfly.security.manager.action.GetClassLoaderAction;
+import org.wildfly.security.manager.action.SetContextClassLoaderFromClassAction;
 
 /**
  * Base service for managing a data-source.
@@ -123,12 +123,12 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
 
             deploymentMD = getDeployer().deploy(container);
             if (deploymentMD.getCfs().length != 1) {
-                throw MESSAGES.cannotStartDs();
+                throw ConnectorLogger.ROOT_LOGGER.cannotStartDs();
             }
             sqlDataSource = (javax.sql.DataSource) deploymentMD.getCfs()[0];
             DS_DEPLOYER_LOGGER.debugf("Adding datasource: %s", deploymentMD.getCfJndiNames()[0]);
         } catch (Throwable t) {
-            throw MESSAGES.deploymentError(t, jndiName);
+            throw ConnectorLogger.ROOT_LOGGER.deploymentError(t, jndiName);
         }
     }
 
@@ -271,7 +271,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
         public CommonDeployment deploy(ServiceContainer serviceContainer) throws DeployException {
             try {
                 if (serviceContainer == null) {
-                    throw new DeployException(MESSAGES.nullVar("ServiceContainer"));
+                    throw new DeployException(ConnectorLogger.ROOT_LOGGER.nullVar("ServiceContainer"));
                 }
                 this.serviceContainer = serviceContainer;
 
@@ -311,9 +311,9 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
                         "uniqueJdbcLocalId", "uniqueJdbcXAId", dataSources, AbstractDataSourceService.class.getClassLoader());
                 return c;
             } catch (MalformedURLException e) {
-                throw MESSAGES.cannotDeploy(e);
+                throw ConnectorLogger.ROOT_LOGGER.cannotDeploy(e);
             } catch (ValidateException e) {
-                throw MESSAGES.cannotDeployAndValidate(e);
+                throw ConnectorLogger.ROOT_LOGGER.cannotDeployAndValidate(e);
             }
 
         }
@@ -363,7 +363,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
 
                 return o;
             } catch (Throwable t) {
-                throw MESSAGES.deploymentFailed(t, className);
+                throw ConnectorLogger.ROOT_LOGGER.deploymentFailed(t, className);
             }
         }
 
@@ -466,7 +466,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
                 try {
                     managedConnectionFactory.setURLDelimiter(dataSourceConfig.getUrlDelimiter());
                 } catch (Exception e) {
-                    throw MESSAGES.failedToGetUrlDelimiter(e);
+                    throw ConnectorLogger.ROOT_LOGGER.failedToGetUrlDelimiter(e);
                 }
             }
 
@@ -539,9 +539,6 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
 
             final Validation validation = dataSourceConfig.getValidation();
             if (validation != null) {
-                if (validation.isValidateOnMatch() != null) {
-                    managedConnectionFactory.setValidateOnMatch(validation.isValidateOnMatch());
-                }
                 if (validation.getCheckValidConnectionSql() != null) {
                     managedConnectionFactory.setCheckValidConnectionSQL(validation.getCheckValidConnectionSql());
                 }

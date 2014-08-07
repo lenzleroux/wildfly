@@ -25,10 +25,8 @@ package org.jboss.as.ejb3.security;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.jboss.as.ee.component.ComponentConfiguration;
@@ -37,6 +35,7 @@ import org.jboss.as.ee.component.ViewConfigurator;
 import org.jboss.as.ee.component.ViewDescription;
 import org.jboss.as.ee.component.interceptors.InterceptorOrder;
 import org.jboss.as.ee.component.serialization.WriteReplaceInterface;
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.component.EJBComponentDescription;
 import org.jboss.as.ejb3.component.EJBViewDescription;
 import org.jboss.as.ejb3.component.MethodIntf;
@@ -44,7 +43,6 @@ import org.jboss.as.ejb3.component.session.SessionBeanComponentDescription;
 import org.jboss.as.ejb3.deployment.ApplicableMethodInformation;
 import org.jboss.as.ejb3.security.service.EJBViewMethodSecurityAttributesService;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
-import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.reflect.ClassReflectionIndexUtil;
 import org.jboss.as.server.deployment.reflect.DeploymentReflectionIndex;
@@ -52,8 +50,8 @@ import org.jboss.invocation.ImmediateInterceptorFactory;
 import org.jboss.invocation.Interceptor;
 import org.jboss.msc.service.ServiceName;
 
-import static org.jboss.as.ejb3.EjbLogger.ROOT_LOGGER;
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+import static org.jboss.as.ejb3.logging.EjbLogger.ROOT_LOGGER;
+
 /**
  * {@link ViewConfigurator} responsible for setting up necessary security interceptors on an EJB view.
  * <p/>
@@ -64,7 +62,7 @@ public class EJBSecurityViewConfigurator implements ViewConfigurator {
     @Override
     public void configure(DeploymentPhaseContext context, ComponentConfiguration componentConfiguration, ViewDescription viewDescription, ViewConfiguration viewConfiguration) throws DeploymentUnitProcessingException {
         if (componentConfiguration.getComponentDescription() instanceof EJBComponentDescription == false) {
-            throw MESSAGES.invalidEjbComponent(componentConfiguration.getComponentName(), componentConfiguration.getComponentClass());
+            throw EjbLogger.ROOT_LOGGER.invalidEjbComponent(componentConfiguration.getComponentName(), componentConfiguration.getComponentClass());
         }
         final DeploymentReflectionIndex deploymentReflectionIndex = context.getDeploymentUnit().getAttachment(org.jboss.as.server.deployment.Attachments.REFLECTION_INDEX);
         final EJBComponentDescription ejbComponentDescription = (EJBComponentDescription) componentConfiguration.getComponentDescription();
@@ -81,11 +79,7 @@ public class EJBSecurityViewConfigurator implements ViewConfigurator {
         final EJBViewDescription ejbViewDescription = (EJBViewDescription) viewDescription;
 
         // setup the JACC contextID.
-        DeploymentUnit deploymentUnit = context.getDeploymentUnit();
-        String contextID = deploymentUnit.getName();
-        if (deploymentUnit.getParent() != null) {
-            contextID = deploymentUnit.getParent().getName() + "!" + contextID;
-        }
+        String contextID = SecurityContextInterceptorFactory.contextIdForDeployment(context.getDeploymentUnit());
 
         final EJBViewMethodSecurityAttributesService.Builder viewMethodSecurityAttributesServiceBuilder;
         final ServiceName viewMethodSecurityAttributesServiceName;
@@ -127,9 +121,9 @@ public class EJBSecurityViewConfigurator implements ViewConfigurator {
             }
         }
 
-        final boolean securityRequired = beanHasMethodLevelSecurityMetadata || this.hasSecurityMetaData(ejbComponentDescription);
+        final boolean securityRequired = beanHasMethodLevelSecurityMetadata || ejbComponentDescription.hasBeanLevelSecurityMetadata();
         // setup the security context interceptor
-        viewConfiguration.addViewInterceptor(new SecurityContextInterceptorFactory(securityRequired), InterceptorOrder.View.SECURITY_CONTEXT);
+        viewConfiguration.addViewInterceptor(new SecurityContextInterceptorFactory(securityRequired, true, contextID), InterceptorOrder.View.SECURITY_CONTEXT);
         // now add the security interceptor if the bean has *any* security metadata applicable
         if (securityRequired) {
             // also check the missing-method-permissions-deny-access configuration and add the authorization interceptor
@@ -212,47 +206,9 @@ public class EJBSecurityViewConfigurator implements ViewConfigurator {
             // add the interceptor
             final Interceptor authorizationInterceptor = new AuthorizationInterceptor(ejbMethodSecurityMetaData, viewClassName, viewMethod, contextID);
             viewConfiguration.addViewInterceptor(viewMethod, new ImmediateInterceptorFactory(authorizationInterceptor), InterceptorOrder.View.EJB_SECURITY_AUTHORIZATION_INTERCEPTOR);
-            return true;
-        }
-        return false;
-    }
 
-    /**
-     * Returns true if the passed EJB component description has any security metadata configured at the EJB level.
-     * Else returns false. Note that this method does *not* consider method level security metadata.
-     *
-     * @param ejbComponentDescription The EJB component description
-     * @return
-     */
-    private boolean hasSecurityMetaData(final EJBComponentDescription ejbComponentDescription) {
-        // if an explicit security-domain is present, then we consider it the bean to be processed by security interceptors
-        if (ejbComponentDescription.isExplicitSecurityDomainConfigured()) {
             return true;
         }
-        // if a run-as is present, then we consider it the bean to be processed by security interceptors
-        if (ejbComponentDescription.getRunAs() != null) {
-            return true;
-        }
-        // if a run-as-principal is present, then we consider it the bean to be processed by security interceptors
-        if (ejbComponentDescription.getRunAsPrincipal() != null) {
-            return true;
-        }
-        // if security roles are configured then we consider the bean to be processed by security interceptors
-        final Collection securityRoles = ejbComponentDescription.getSecurityRoles();
-        if (securityRoles != null && !securityRoles.isEmpty()) {
-            return true;
-        }
-        // if security role links are configured then we consider the bean to be processed by security interceptors
-        final Map<String, Collection<String>> securityRoleLinks = ejbComponentDescription.getSecurityRoleLinks();
-        if (securityRoleLinks != null && !securityRoleLinks.isEmpty()) {
-            return true;
-        }
-        // if declared roles are configured then we consider the bean to be processed by security interceptors
-        final Set<String> declaredRoles = ejbComponentDescription.getDeclaredRoles();
-        if (declaredRoles != null && !declaredRoles.isEmpty()) {
-            return true;
-        }
-        // no security metadata at bean level
         return false;
     }
 }

@@ -22,10 +22,12 @@
 package org.jboss.as.ejb3.remote;
 
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.security.PrivilegedExceptionAction;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,7 +42,7 @@ import javax.transaction.xa.XAResource;
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentView;
 import org.jboss.as.ee.utils.DescriptorUtils;
-import org.jboss.as.ejb3.EjbLogger;
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.component.EJBComponent;
 import org.jboss.as.ejb3.component.entity.EntityBeanComponent;
 import org.jboss.as.ejb3.component.interceptors.AsyncInvocationTask;
@@ -84,8 +86,7 @@ import org.jboss.remoting3.Endpoint;
 import org.jboss.security.SecurityContext;
 import org.jboss.security.SecurityContextAssociation;
 import org.wildfly.clustering.registry.Registry;
-
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * {@link EJBReceiver} for local same-VM invocations. This handles all invocations on remote interfaces
@@ -141,16 +142,15 @@ public class LocalEjbReceiver extends EJBReceiver implements Service<LocalEjbRec
         final Class<?> viewClass = invocation.getViewClass();
         final ComponentView view = ejb.getView(viewClass.getName());
         if (view == null) {
-            throw MESSAGES.viewNotFound(viewClass.getName(), ejb.getEjbName());
+            throw EjbLogger.ROOT_LOGGER.viewNotFound(viewClass.getName(), ejb.getEjbName());
         }
         // make sure it's a remote view
         if (!ejb.isRemoteView(viewClass.getName())) {
-            throw MESSAGES.viewNotFound(viewClass.getName(), ejb.getEjbName());
+            throw EjbLogger.ROOT_LOGGER.viewNotFound(viewClass.getName(), ejb.getEjbName());
         }
         final ClonerConfiguration paramConfig = new ClonerConfiguration();
         paramConfig.setClassCloner(new ClassLoaderClassCloner(ejb.getDeploymentClassLoader()));
-        final ObjectCloner parameterCloner = ObjectCloners.getSerializingObjectClonerFactory().createCloner(paramConfig);
-
+        final ObjectCloner parameterCloner = createCloner(paramConfig);
         //TODO: this is not very efficient
         final Method method = view.getMethod(invocation.getInvokedMethod().getName(), DescriptorUtils.methodDescriptor(invocation.getInvokedMethod()));
 
@@ -210,8 +210,8 @@ public class LocalEjbReceiver extends EJBReceiver implements Service<LocalEjbRec
         }
 
         final ClonerConfiguration config = new ClonerConfiguration();
-        config.setClassCloner(new LocalInvocationClassCloner(invocation.getInvokedProxy().getClass().getClassLoader()));
-        final ObjectCloner resultCloner = ObjectCloners.getSerializingObjectClonerFactory().createCloner(config);
+        config.setClassCloner(new LocalInvocationClassCloner(WildFlySecurityManager.getClassLoaderPrivileged(invocation.getInvokedProxy().getClass())));
+        final ObjectCloner resultCloner = createCloner(config);
         if (async) {
             if (ejbComponent instanceof SessionBeanComponent) {
                 final SessionBeanComponent component = (SessionBeanComponent) ejbComponent;
@@ -235,7 +235,7 @@ public class LocalEjbReceiver extends EJBReceiver implements Service<LocalEjbRec
                 //TODO: we do not clone the exception of an async task
                 receiverContext.resultReady(new ImmediateResultProducer(task));
             } else {
-                throw MESSAGES.asyncInvocationOnlyApplicableForSessionBeans();
+                throw EjbLogger.ROOT_LOGGER.asyncInvocationOnlyApplicableForSessionBeans();
             }
         } else {
             final Object result;
@@ -254,12 +254,27 @@ public class LocalEjbReceiver extends EJBReceiver implements Service<LocalEjbRec
         }
     }
 
+    private ObjectCloner createCloner(final ClonerConfiguration paramConfig) {
+        ObjectCloner parameterCloner;
+        if(WildFlySecurityManager.isChecking()) {
+            parameterCloner = WildFlySecurityManager.doUnchecked(new PrivilegedAction<ObjectCloner>() {
+                @Override
+                public ObjectCloner run() {
+                    return ObjectCloners.getSerializingObjectClonerFactory().createCloner(paramConfig);
+                }
+            });
+        } else {
+            parameterCloner = ObjectCloners.getSerializingObjectClonerFactory().createCloner(paramConfig);
+        }
+        return parameterCloner;
+    }
+
     @Override
     protected <T> StatefulEJBLocator<T> openSession(EJBReceiverContext context, Class<T> viewType, String appName, String moduleName, String distinctName, String beanName) throws IllegalArgumentException {
         final EjbDeploymentInformation ejbInfo = findBean(appName, moduleName, distinctName, beanName);
         final EJBComponent component = ejbInfo.getEjbComponent();
         if (!(component instanceof StatefulSessionComponent)) {
-            throw MESSAGES.notStatefulSessionBean(beanName, appName, moduleName, distinctName);
+            throw EjbLogger.ROOT_LOGGER.notStatefulSessionBean(beanName, appName, moduleName, distinctName);
         }
         final StatefulSessionComponent statefulComponent = (StatefulSessionComponent) component;
         final SessionID sessionID = statefulComponent.createSession();
@@ -286,9 +301,18 @@ public class LocalEjbReceiver extends EJBReceiver implements Service<LocalEjbRec
         }
 
         try {
-            return cloner.clone(object);
+            if(WildFlySecurityManager.isChecking()) {
+                return WildFlySecurityManager.doUnchecked(new PrivilegedExceptionAction<Object>() {
+                    @Override
+                    public Object run() throws IOException, ClassNotFoundException {
+                        return cloner.clone(object);
+                    }
+                });
+            } else {
+                return cloner.clone(object);
+            }
         } catch (Exception e) {
-            throw MESSAGES.failedToMarshalEjbParameters(e);
+            throw EjbLogger.ROOT_LOGGER.failedToMarshalEjbParameters(e);
         }
     }
 
@@ -336,11 +360,11 @@ public class LocalEjbReceiver extends EJBReceiver implements Service<LocalEjbRec
     private EjbDeploymentInformation findBean(final String appName, final String moduleName, final String distinctName, final String beanName) {
         final ModuleDeployment module = deploymentRepository.getValue().getModules().get(new DeploymentModuleIdentifier(appName, moduleName, distinctName));
         if (module == null) {
-            throw MESSAGES.unknownDeployment(appName, moduleName, distinctName);
+            throw EjbLogger.ROOT_LOGGER.unknownDeployment(appName, moduleName, distinctName);
         }
         final EjbDeploymentInformation ejbInfo = module.getEjbs().get(beanName);
         if (ejbInfo == null) {
-            throw MESSAGES.ejbNotFoundInDeployment(beanName, appName, moduleName, distinctName);
+            throw EjbLogger.ROOT_LOGGER.ejbNotFoundInDeployment(beanName, appName, moduleName, distinctName);
         }
         return ejbInfo;
     }

@@ -23,6 +23,7 @@ package org.jboss.as.ejb3.timer.schedule;
 
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
@@ -31,14 +32,13 @@ import javax.ejb.ScheduleExpression;
 
 import org.jboss.as.ejb3.timerservice.schedule.CalendarBasedTimeout;
 import org.junit.Assert;
-import org.junit.Assume;
-import org.junit.Before;
 import org.junit.Test;
 
 /**
  * CalendarBasedTimeoutTestCase
  *
  * @author Jaikiran Pai
+ * @author Eduardo Martins
  * @author "<a href=\"mailto:wfink@redhat.com\">Wolf-Dieter Fink</a>"
  */
 public class CalendarBasedTimeoutTestCase {
@@ -79,10 +79,36 @@ public class CalendarBasedTimeoutTestCase {
         return timeZones;
     }
 
-    @Before
-    public void checkTestEnabled() {
-        Assume.assumeTrue(Boolean.valueOf("jboss.test.allow.CalendarBasedTimeoutTestCase"));
+    /**
+     * Asserts timeouts based on next day of week.
+     * Uses expression dayOfWeek=saturday hour=3 minute=21 second=50.
+     * Expected next timeout is SAT 2014-03-29 3:21:50
+     */
+    @Test
+    public void testNextDayOfWeek() {
+        // start date is SAT 2014-03-22 4:00:00, has to advance to SAT of next week
+        testNextDayOfWeek(new GregorianCalendar(2014,2,22,4,0,0).getTime());
+        // start date is TUE 2014-03-25 2:00:00, has to advance to SAT of same week
+        testNextDayOfWeek(new GregorianCalendar(2014,2,25,2,0,0).getTime());
     }
+
+    private void testNextDayOfWeek(Date start) {
+        ScheduleExpression expression = new ScheduleExpression();
+        expression.dayOfWeek("6");
+        expression.hour("3");
+        expression.minute("21");
+        expression.second("50");
+        expression.start(start);
+        CalendarBasedTimeout calendarTimeout = new CalendarBasedTimeout(expression);
+        Calendar firstTimeout = calendarTimeout.getFirstTimeout();
+        Assert.assertNotNull(firstTimeout);
+        Assert.assertEquals(50, firstTimeout.get(Calendar.SECOND));
+        Assert.assertEquals(21, firstTimeout.get(Calendar.MINUTE));
+        Assert.assertEquals(3, firstTimeout.get(Calendar.HOUR_OF_DAY));
+        Assert.assertEquals(7, firstTimeout.get(Calendar.DAY_OF_WEEK));
+        Assert.assertEquals(29, firstTimeout.get(Calendar.DAY_OF_MONTH));
+    }
+
 
     @Test
     public void testCalendarBasedTimeout() {
@@ -424,8 +450,8 @@ public class CalendarBasedTimeoutTestCase {
         long diff = nextTimeout.getTimeInMillis() - firstTimeout.getTimeInMillis();
         Assert.assertEquals(timeZoneDisplayName, 15 * 1000, diff);
 
-        Calendar currentSystemDate = new GregorianCalendar();
-        Calendar nextTimeoutFromNow = calendarTimeout.getNextTimeout(currentSystemDate);
+        Calendar date = new GregorianCalendar(2014,3,18);
+        Calendar nextTimeoutFromNow = calendarTimeout.getNextTimeout(date);
 //        logger.debug("Next timeout from now is " + nextTimeoutFromNow.getTime());
         int nextMinute = nextTimeoutFromNow.get(Calendar.MINUTE);
         int nextSecond = nextTimeoutFromNow.get(Calendar.SECOND);
@@ -476,68 +502,96 @@ public class CalendarBasedTimeoutTestCase {
     /**
      * Create a Timeout with a Schedule start date in the past (day before) to ensure the time is set correctly.
      * The schedule is on the first day of month to ensure that the calculated time must be moved to the next month.
+     *
+     * The test is run for each day of a whole year.
      */
     //@Test
     public void testWithStartInThePast() {
-        ScheduleExpression schedule = this.getTimezoneSpecificScheduleExpression();
-        schedule.month("*");
-        schedule.dayOfMonth("1");
-        schedule.hour("0-1");
-        schedule.minute("0");
-        schedule.second("0/5");
-        Calendar start = Calendar.getInstance(this.timezone);
-        // subtract one day
-        start.add(Calendar.DAY_OF_MONTH, -1);
-        if(start.get(Calendar.DAY_OF_MONTH) == 1) {
-            // if the previous day is 1, subtract one more day
-            start.add(Calendar.DAY_OF_MONTH, -1);
-        }
-        schedule.start(start.getTime());
-
-        CalendarBasedTimeout calendarTimeout = new CalendarBasedTimeout(schedule);
-        Calendar firstTimeout = calendarTimeout.getFirstTimeout();
-
-        if(firstTimeout.get(Calendar.DAY_OF_MONTH) != 1 ||
-                firstTimeout.get(Calendar.HOUR_OF_DAY) != 0 ||
-                firstTimeout.get(Calendar.MINUTE) != 0 ||
-                firstTimeout.get(Calendar.SECOND) != 0) {
-            Assert.fail(timeZoneDisplayName);
-        }
+        Calendar start = new GregorianCalendar(this.timezone);
+        start.clear();
+        start.set(2014, 3, 18);
+        Calendar end = (Calendar) start.clone();
+        end.add(Calendar.YEAR, 1);
+        do {
+            // setup schedule
+            ScheduleExpression schedule = this.getTimezoneSpecificScheduleExpression();
+            schedule.month("*");
+            schedule.dayOfMonth("1");
+            schedule.hour("0-1");
+            schedule.minute("0");
+            schedule.second("0/5");
+            Calendar scheduleStart = (Calendar) start.clone();
+            // subtract one day
+            scheduleStart.add(Calendar.DAY_OF_MONTH, -1);
+            if(scheduleStart.get(Calendar.DAY_OF_MONTH) == 1) {
+                // if the previous day is 1, subtract one more day
+                scheduleStart.add(Calendar.DAY_OF_MONTH, -1);
+            }
+            schedule.start(scheduleStart.getTime());
+            // create calendar timeout and retrieve first timeout
+            CalendarBasedTimeout calendarTimeout = new CalendarBasedTimeout(schedule);
+            Calendar firstTimeout = calendarTimeout.getFirstTimeout();
+            // assert first timeout result
+            if(firstTimeout.get(Calendar.DAY_OF_MONTH) != 1 ||
+                    firstTimeout.get(Calendar.HOUR_OF_DAY) != 0 ||
+                    firstTimeout.get(Calendar.MINUTE) != 0 ||
+                    firstTimeout.get(Calendar.SECOND) != 0) {
+                Assert.fail(timeZoneDisplayName);
+            }
+            // move to next day
+            start.add(Calendar.DAY_OF_MONTH,1);
+        } while (start.before(end));
     }
 
     /**
      * Check a Timeout if the Schedule start date in the future (day after)
      * The schedule is on the first day of month to ensure that the calculated time must be moved to the next month.
+     *
+     * The test is run for each day of a whole year.
      */
     //@Test
     public void testWithStartInTheFutureAndLaterSchedule() {
-        ScheduleExpression schedule = this.getTimezoneSpecificScheduleExpression();
-        schedule.month("*");
-        schedule.dayOfMonth("1");
-        schedule.hour("0-12");
-        schedule.minute("0/5");
-        schedule.second("0");
-        Calendar start = Calendar.getInstance(this.timezone);
-        // add one day
-        start.add(Calendar.DAY_OF_MONTH, 1);
-        if(start.get(Calendar.DAY_OF_MONTH) == 1) {
-            // if the next day is 1, add one more day, to avoid first timeout by advancing minutes only
-            start.add(Calendar.DAY_OF_MONTH, 1);
-        }
-        schedule.start(start.getTime());
-
-        CalendarBasedTimeout calendarTimeout = new CalendarBasedTimeout(schedule);
-        Calendar firstTimeout = calendarTimeout.getFirstTimeout();
-
-        if(firstTimeout.get(Calendar.DAY_OF_MONTH) != 1 ||
-                firstTimeout.get(Calendar.HOUR_OF_DAY) != 0 ||
-                firstTimeout.get(Calendar.MINUTE) != 0) {
-            Assert.fail(timeZoneDisplayName);
-        }
+        Calendar start = new GregorianCalendar(this.timezone);
+        start.clear();
+        start.set(2014, 3, 18);
+        Calendar end = (Calendar) start.clone();
+        end.add(Calendar.YEAR, 1);
+        do {
+            // setup schedule
+            ScheduleExpression schedule = this.getTimezoneSpecificScheduleExpression();
+            schedule.month("*");
+            schedule.dayOfMonth("1");
+            schedule.hour("0-12");
+            schedule.minute("0/5");
+            schedule.second("0");
+            Calendar scheduleStart = (Calendar) start.clone();
+            // add one day
+            scheduleStart.add(Calendar.DAY_OF_MONTH, 1);
+            if(scheduleStart.get(Calendar.DAY_OF_MONTH) == 1) {
+                // if the next day is 1, add one more day, to avoid first timeout by advancing minutes only
+                scheduleStart.add(Calendar.DAY_OF_MONTH, 1);
+            }
+            schedule.start(scheduleStart.getTime());
+            // create calendar timeout and retrieve first timeout
+            CalendarBasedTimeout calendarTimeout = new CalendarBasedTimeout(schedule);
+            Calendar firstTimeout = calendarTimeout.getFirstTimeout();
+            // assert first timeout result
+            if(firstTimeout.get(Calendar.DAY_OF_MONTH) != 1 ||
+                    firstTimeout.get(Calendar.HOUR_OF_DAY) != 0 ||
+                    firstTimeout.get(Calendar.MINUTE) != 0) {
+                Assert.fail(timeZoneDisplayName);
+            }
+            // move to next day
+            start.add(Calendar.DAY_OF_MONTH,1);
+        } while (start.before(end));
     }
 
     private ScheduleExpression getTimezoneSpecificScheduleExpression() {
-        return new ScheduleExpression().timezone(this.timezone.getID());
+        ScheduleExpression scheduleExpression = new ScheduleExpression().timezone(this.timezone.getID());
+        GregorianCalendar start = new GregorianCalendar(this.timezone);
+        start.clear();
+        start.set(2014,0,1,1,0,0);
+        return scheduleExpression.start(start.getTime());
     }
 
     private boolean isLeapYear(Calendar cal) {

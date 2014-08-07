@@ -23,20 +23,25 @@
 package org.wildfly.extension.mod_cluster;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
+import org.jboss.as.controller.OperationDefinition;
+import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
-import org.jboss.as.controller.descriptions.DefaultOperationDescriptionProvider;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -55,6 +60,8 @@ import java.util.Map;
  * @author Radoslav Husar
  */
 class ModClusterConfigResourceDefinition extends SimpleResourceDefinition {
+
+    static final PathElement PATH = PathElement.pathElement(CommonAttributes.MOD_CLUSTER_CONFIG, CommonAttributes.CONFIGURATION);
 
     static final SimpleAttributeDefinition ADVERTISE_SOCKET = SimpleAttributeDefinitionBuilder.create(CommonAttributes.ADVERTISE_SOCKET, ModelType.STRING, true)
             .setRestartAllServices()
@@ -101,6 +108,14 @@ class ModClusterConfigResourceDefinition extends SimpleResourceDefinition {
             .setRestartAllServices()
             .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.CREDENTIAL)
             .addAccessConstraint(ModClusterExtension.MOD_CLUSTER_SECURITY_DEF)
+            .build();
+
+    static final SimpleAttributeDefinition STATUS_INTERVAL = SimpleAttributeDefinitionBuilder.create(CommonAttributes.STATUS_INTERVAL, ModelType.INT, true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(10)) // This default value is used in the transformer definition, change with caution.
+            .setMeasurementUnit(MeasurementUnit.SECONDS)
+            .setValidator(new IntRangeValidator(1, true, true))
+            .setRestartAllServices()
             .build();
 
     // TODO: Convert into an xs:list of host:context
@@ -259,6 +274,7 @@ class ModClusterConfigResourceDefinition extends SimpleResourceDefinition {
             LOAD_BALANCING_GROUP, // was called "domain" in the 1.0 xsd
             CONNECTOR, // not in the 1.0 xsd
             SESSION_DRAINING_STRATEGY, // not in the 1.1 xsd
+            STATUS_INTERVAL, // since 2.0 xsd
     };
 
 
@@ -272,8 +288,36 @@ class ModClusterConfigResourceDefinition extends SimpleResourceDefinition {
         ATTRIBUTES_BY_NAME = Collections.unmodifiableMap(attrs);
     }
 
+    public static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(PATH);
+
+        if (ModClusterModel.VERSION_3_0_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder()
+                    // Discard if using default value, reject if set to other than previously hard-coded default of 10 seconds
+                    .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(STATUS_INTERVAL.getDefaultValue()), STATUS_INTERVAL)
+                    .addRejectCheck(new RejectAttributeChecker.SimpleAcceptAttributeChecker(STATUS_INTERVAL.getDefaultValue()), STATUS_INTERVAL)
+                    .end();
+        }
+
+        if (ModClusterModel.VERSION_2_0_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder()
+                    .addRejectCheck(SessionDrainingStrategyChecker.INSTANCE, SESSION_DRAINING_STRATEGY)
+                    .setDiscard(SessionDrainingStrategyChecker.INSTANCE, SESSION_DRAINING_STRATEGY)
+                    .end();
+        }
+
+        if (ModClusterModel.VERSION_1_3_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder()
+                    .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, ADVERTISE, AUTO_ENABLE_CONTEXTS, FLUSH_PACKETS, STICKY_SESSION, STICKY_SESSION_REMOVE, STICKY_SESSION_FORCE, PING)
+                    .end();
+        }
+
+        DynamicLoadProviderDefinition.buildTransformation(version, builder);
+        ModClusterSSLResourceDefinition.buildTransformation(version, builder);
+    }
+
     public ModClusterConfigResourceDefinition() {
-        super(ModClusterExtension.CONFIGURATION_PATH,
+        super(PATH,
                 ModClusterExtension.getResourceDescriptionResolver(CommonAttributes.CONFIGURATION),
                 ModClusterConfigAdd.INSTANCE,
                 new ReloadRequiredRemoveStepHandler());
@@ -296,16 +340,26 @@ class ModClusterConfigResourceDefinition extends SimpleResourceDefinition {
         // Metric for the  dynamic-load-provider
         EnumSet<OperationEntry.Flag> runtimeOnlyFlags = EnumSet.of(OperationEntry.Flag.RUNTIME_ONLY);
 
-        final DescriptionProvider addMetric = new DefaultOperationDescriptionProvider(CommonAttributes.ADD_METRIC, rootResolver, LoadMetricDefinition.ATTRIBUTES);
-        resourceRegistration.registerOperationHandler(CommonAttributes.ADD_METRIC, ModClusterAddMetric.INSTANCE, addMetric, false, runtimeOnlyFlags);
+        final OperationDefinition addMetricDef = new SimpleOperationDefinitionBuilder(CommonAttributes.ADD_METRIC, rootResolver)
+                .setParameters(LoadMetricDefinition.ATTRIBUTES)
+                .setRuntimeOnly()
+                .build();
+        final OperationDefinition addCustomDef = new SimpleOperationDefinitionBuilder(CommonAttributes.ADD_CUSTOM_METRIC, rootResolver)
+                .setParameters(CustomLoadMetricDefinition.ATTRIBUTES)
+                .setRuntimeOnly()
+                .build();
+        final OperationDefinition removeMetricDef = new SimpleOperationDefinitionBuilder(CommonAttributes.REMOVE_METRIC, rootResolver)
+                .setParameters(LoadMetricDefinition.TYPE)
+                .setRuntimeOnly()
+                .build();
+        final OperationDefinition removeCustomDef = new SimpleOperationDefinitionBuilder(CommonAttributes.REMOVE_CUSTOM_METRIC, rootResolver)
+                .setParameters(CustomLoadMetricDefinition.CLASS)
+                .setRuntimeOnly()
+                .build();
 
-        final DescriptionProvider addCustomMetric = new DefaultOperationDescriptionProvider(CommonAttributes.ADD_CUSTOM_METRIC, rootResolver, CustomLoadMetricDefinition.ATTRIBUTES);
-        resourceRegistration.registerOperationHandler(CommonAttributes.ADD_CUSTOM_METRIC, ModClusterAddCustomMetric.INSTANCE, addCustomMetric, false, runtimeOnlyFlags);
-
-        final DescriptionProvider removeMetric = new DefaultOperationDescriptionProvider(CommonAttributes.REMOVE_METRIC, rootResolver, LoadMetricDefinition.TYPE);
-        resourceRegistration.registerOperationHandler(CommonAttributes.REMOVE_METRIC, ModClusterRemoveMetric.INSTANCE, removeMetric, false, runtimeOnlyFlags);
-
-        final DescriptionProvider removeCustomMetric = new DefaultOperationDescriptionProvider(CommonAttributes.REMOVE_CUSTOM_METRIC, rootResolver, CustomLoadMetricDefinition.CLASS);
-        resourceRegistration.registerOperationHandler(CommonAttributes.REMOVE_CUSTOM_METRIC, ModClusterRemoveCustomMetric.INSTANCE, removeCustomMetric, false, runtimeOnlyFlags);
+        resourceRegistration.registerOperationHandler(addMetricDef, ModClusterAddMetric.INSTANCE);
+        resourceRegistration.registerOperationHandler(addCustomDef, ModClusterAddCustomMetric.INSTANCE);
+        resourceRegistration.registerOperationHandler(removeMetricDef, ModClusterRemoveMetric.INSTANCE);
+        resourceRegistration.registerOperationHandler(removeCustomDef, ModClusterRemoveCustomMetric.INSTANCE);
     }
 }

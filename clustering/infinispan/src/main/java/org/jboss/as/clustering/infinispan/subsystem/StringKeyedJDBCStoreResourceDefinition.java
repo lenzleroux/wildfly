@@ -25,6 +25,7 @@ package org.jboss.as.clustering.infinispan.subsystem;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
@@ -33,6 +34,7 @@ import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
 import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 
 /**
  * Resource description for the addressable resource
@@ -43,41 +45,42 @@ import org.jboss.as.controller.registry.OperationEntry;
  */
 public class StringKeyedJDBCStoreResourceDefinition extends JDBCStoreResourceDefinition {
 
-    public static final PathElement STRING_KEYED_JDBC_STORE_PATH = PathElement.pathElement(ModelKeys.STRING_KEYED_JDBC_STORE, ModelKeys.STRING_KEYED_JDBC_STORE_NAME);
+    static final PathElement PATH = PathElement.pathElement(ModelKeys.STRING_KEYED_JDBC_STORE, ModelKeys.STRING_KEYED_JDBC_STORE_NAME);
 
     // attributes
-    static final AttributeDefinition[] STRING_KEYED_JDBC_STORE_ATTRIBUTES = { STRING_KEYED_TABLE };
+    static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { STRING_KEYED_TABLE };
 
     // operations
-    private static final OperationDefinition STRING_KEYED_JDBC_STORE_ADD_DEFINITION = new SimpleOperationDefinitionBuilder(ADD, InfinispanExtension.getResourceDescriptionResolver(ModelKeys.STRING_KEYED_JDBC_STORE))
-            .setParameters(COMMON_STORE_PARAMETERS)
+    private static final OperationDefinition ADD_DEFINITION = new SimpleOperationDefinitionBuilder(ADD, InfinispanExtension.getResourceDescriptionResolver(ModelKeys.STRING_KEYED_JDBC_STORE))
+            .setParameters(PARAMETERS)
             .addParameter(DATA_SOURCE)
             .addParameter(DIALECT)
             .addParameter(STRING_KEYED_TABLE)
-            .build()
-    ;
+            .build();
 
-    public StringKeyedJDBCStoreResourceDefinition() {
-        super(STRING_KEYED_JDBC_STORE_PATH,
-                InfinispanExtension.getResourceDescriptionResolver(ModelKeys.STRING_KEYED_JDBC_STORE),
-                CacheConfigOperationHandlers.STRING_KEYED_JDBC_STORE_ADD,
-                ReloadRequiredRemoveStepHandler.INSTANCE);
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(PATH);
+
+        JDBCStoreResourceDefinition.buildTransformation(version, builder);
+    }
+
+    StringKeyedJDBCStoreResourceDefinition(boolean allowRuntimeOnlyRegistration) {
+        super(PATH, InfinispanExtension.getResourceDescriptionResolver(ModelKeys.STRING_KEYED_JDBC_STORE), new StringKeyedJDBCStoreAddHandler(), ReloadRequiredRemoveStepHandler.INSTANCE, allowRuntimeOnlyRegistration);
     }
 
     @Override
-    public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        super.registerAttributes(resourceRegistration);
-
+    public void registerAttributes(ManagementResourceRegistration registration) {
+        super.registerAttributes(registration);
         // check that we don't need a special handler here?
-        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(STRING_KEYED_JDBC_STORE_ATTRIBUTES);
-        for (AttributeDefinition attr : STRING_KEYED_JDBC_STORE_ATTRIBUTES) {
-            resourceRegistration.registerReadWriteAttribute(attr, null, writeHandler);
+        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(ATTRIBUTES);
+        for (AttributeDefinition attr : ATTRIBUTES) {
+            registration.registerReadWriteAttribute(attr, null, writeHandler);
         }
     }
 
     // override the add operation to provide a custom definition (for the optional PROPERTIES parameter to add())
     @Override
     protected void registerAddOperation(final ManagementResourceRegistration registration, final OperationStepHandler handler, OperationEntry.Flag... flags) {
-        registration.registerOperationHandler(STRING_KEYED_JDBC_STORE_ADD_DEFINITION, handler);
+        registration.registerOperationHandler(ADD_DEFINITION, handler);
     }
 }

@@ -41,12 +41,14 @@ public enum Attribute {
     ASYNC_MARSHALLING(ModelKeys.ASYNC_MARSHALLING),
     BACKUP_FAILURE_POLICY(ModelKeys.BACKUP_FAILURE_POLICY),
     BATCH_SIZE(ModelKeys.BATCH_SIZE),
-    BATCHING(ModelKeys.BATCHING),
+    @Deprecated BATCHING(ModelKeys.BATCHING),
     CACHE(ModelKeys.CACHE),
+    CAPACITY_FACTOR(ModelKeys.CAPACITY_FACTOR),
     CHUNK_SIZE(ModelKeys.CHUNK_SIZE),
     CLASS(ModelKeys.CLASS),
     CLUSTER(ModelKeys.CLUSTER),
     CONCURRENCY_LEVEL(ModelKeys.CONCURRENCY_LEVEL),
+    CONSISTENT_HASH_STRATEGY(ModelKeys.CONSISTENT_HASH_STRATEGY),
     DATASOURCE(ModelKeys.DATASOURCE),
     DEFAULT_CACHE(ModelKeys.DEFAULT_CACHE),
     @Deprecated DEFAULT_CACHE_CONTAINER("default-cache-container"),
@@ -110,7 +112,7 @@ public enum Attribute {
     THREAD_POOL_SIZE(ModelKeys.THREAD_POOL_SIZE),
     TIMEOUT(ModelKeys.TIMEOUT),
     TYPE(ModelKeys.TYPE),
-    @Deprecated VIRTUAL_NODES("virtual-nodes"),
+    @Deprecated VIRTUAL_NODES(ModelKeys.VIRTUAL_NODES),
     ;
 
     private final String name;

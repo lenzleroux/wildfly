@@ -26,6 +26,7 @@ import org.jboss.as.clustering.infinispan.CacheContainer;
 import org.jboss.as.clustering.infinispan.subsystem.CacheConfigurationService;
 import org.jboss.as.clustering.infinispan.subsystem.CacheService;
 import org.jboss.as.clustering.infinispan.subsystem.EmbeddedCacheManagerService;
+import org.jboss.as.clustering.infinispan.subsystem.GlobalComponentRegistryService;
 import org.jboss.as.clustering.msc.AsynchronousService;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
@@ -41,7 +42,7 @@ public class InfinispanSSOManagerFactoryBuilder implements SSOManagerFactoryBuil
     public static final String DEFAULT_CACHE_CONTAINER = "web";
 
     @Override
-    public <I, D> ServiceBuilder<SSOManagerFactory<I, D>> build(ServiceTarget target, ServiceName name, String host) {
+    public <A, D> ServiceBuilder<SSOManagerFactory<A, D>> build(ServiceTarget target, ServiceName name, String host) {
         String containerName = DEFAULT_CACHE_CONTAINER;
         ServiceName containerServiceName = EmbeddedCacheManagerService.getServiceName(containerName);
         String templateCacheName = CacheContainer.DEFAULT_CACHE_ALIAS;
@@ -66,6 +67,7 @@ public class InfinispanSSOManagerFactoryBuilder implements SSOManagerFactoryBuil
             }
         };
         AsynchronousService.addService(target, cacheServiceName, new CacheService<>(cacheName, dependencies))
+                .addDependency(GlobalComponentRegistryService.getServiceName(containerName))
                 .addDependency(cacheConfigurationServiceName)
                 .addDependency(containerServiceName, EmbeddedCacheManager.class, cacheContainer)
                 .setInitialMode(ServiceController.Mode.ON_DEMAND)

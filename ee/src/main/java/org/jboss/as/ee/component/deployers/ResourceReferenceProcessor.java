@@ -21,6 +21,7 @@
  */
 package org.jboss.as.ee.component.deployers;
 
+import org.jboss.as.ee.logging.EeLogger;
 import org.jboss.as.ee.component.Attachments;
 import org.jboss.as.ee.component.BindingConfiguration;
 import org.jboss.as.ee.component.ComponentDescription;
@@ -31,7 +32,6 @@ import org.jboss.as.ee.component.FixedInjectionSource;
 import org.jboss.as.ee.component.InjectionSource;
 import org.jboss.as.ee.component.LookupInjectionSource;
 import org.jboss.as.ee.component.ResourceInjectionTarget;
-import org.jboss.as.ee.utils.InjectionUtils;
 import org.jboss.as.naming.ImmediateManagedReference;
 import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.naming.ManagedReferenceFactory;
@@ -54,8 +54,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.jboss.as.ee.EeLogger.ROOT_LOGGER;
-import static org.jboss.as.ee.EeMessages.MESSAGES;
+import static org.jboss.as.ee.logging.EeLogger.ROOT_LOGGER;
 
 /**
  * Deployment processor that sets up env-entry, resource-ref and resource-env-ref bindings
@@ -65,6 +64,7 @@ import static org.jboss.as.ee.EeMessages.MESSAGES;
  */
 public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBindingsProcessor {
 
+    private static final String JAVAX_NAMING_CONTEXT = "javax.naming.Context";
 
     @Override
     protected List<BindingConfiguration> processDescriptorEntries(DeploymentUnit deploymentUnit, DeploymentDescriptorEnvironment environment, ResourceInjectionTarget resourceInjectionTarget, final ComponentDescription componentDescription, ClassLoader classLoader, DeploymentReflectionIndex deploymentReflectionIndex, final EEApplicationClasses applicationClasses) throws DeploymentUnitProcessingException {
@@ -80,7 +80,6 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
         List<BindingConfiguration> bindings = new ArrayList<BindingConfiguration>();
         final ResourceEnvironmentReferencesMetaData resourceEnvRefs = environment.getEnvironment().getResourceEnvironmentReferences();
         final EEResourceReferenceProcessorRegistry registry = deploymentUnit.getAttachment(Attachments.RESOURCE_REFERENCE_PROCESSOR_REGISTRY);
-
         if (resourceEnvRefs == null) {
             return bindings;
         }
@@ -96,49 +95,44 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
                 try {
                     classType = classLoader.loadClass(resourceEnvRef.getType());
                 } catch (ClassNotFoundException e) {
-                    throw MESSAGES.cannotLoad(e, resourceEnvRef.getType());
+                    throw EeLogger.ROOT_LOGGER.cannotLoad(e, resourceEnvRef.getType());
                 }
             }
             // our injection (source) comes from the local (ENC) lookup, no matter what.
-            LookupInjectionSource injectionSource = new LookupInjectionSource(name);
-
+            InjectionSource injectionSource = new LookupInjectionSource(name);
             classType = processInjectionTargets(resourceInjectionTarget, injectionSource, classLoader, deploymentReflectionIndex, resourceEnvRef, classType);
-            final BindingConfiguration bindingConfiguration;
             if (!isEmpty(resourceEnvRef.getLookupName())) {
-                bindingConfiguration = new BindingConfiguration(name, new LookupInjectionSource(resourceEnvRef.getLookupName()));
+                injectionSource = new LookupInjectionSource(resourceEnvRef.getLookupName(), classType != null && JAVAX_NAMING_CONTEXT.equals(classType.getName()));
             } else {
                 if (classType == null) {
-                    throw MESSAGES.cannotDetermineType(name);
+                    throw EeLogger.ROOT_LOGGER.cannotDetermineType(name);
                 }
                 //check if it is a well known type
                 final String lookup = ResourceInjectionAnnotationParsingProcessor.FIXED_LOCATIONS.get(classType.getName());
                 if (lookup != null) {
-                    bindingConfiguration = new BindingConfiguration(name, new LookupInjectionSource(lookup));
+                    injectionSource = new LookupInjectionSource(lookup);
                 } else {
-
                     final EEResourceReferenceProcessor resourceReferenceProcessor = registry.getResourceReferenceProcessor(classType.getName());
                     if (resourceReferenceProcessor != null) {
-                        InjectionSource valueSource = resourceReferenceProcessor.getResourceReferenceBindingSource();
-                        bindingConfiguration = new BindingConfiguration(name, valueSource);
+                        injectionSource = resourceReferenceProcessor.getResourceReferenceBindingSource();
                     } else {
                         //TODO: how are we going to handle these? Previously they would have been handled by jboss-*.xml
                         if (resourceEnvRef.getResourceEnvRefName().startsWith("java:")) {
                             ROOT_LOGGER.cannotResolve("resource-env-ref", name);
                             continue;
                         } else {
-                            bindingConfiguration = new BindingConfiguration(name, new LookupInjectionSource("java:jboss/resources/" + resourceEnvRef.getResourceEnvRefName()));
+                            injectionSource = new LookupInjectionSource("java:jboss/resources/" + resourceEnvRef.getResourceEnvRefName());
                         }
                     }
                 }
             }
-            bindings.add(bindingConfiguration);
+            bindings.add(new BindingConfiguration(name, injectionSource));
         }
         return bindings;
     }
 
     private List<BindingConfiguration> getResourceRefEntries(final DeploymentUnit deploymentUnit, DeploymentDescriptorEnvironment environment, ClassLoader classLoader, DeploymentReflectionIndex deploymentReflectionIndex, ResourceInjectionTarget resourceInjectionTarget) throws DeploymentUnitProcessingException {
         List<BindingConfiguration> bindings = new ArrayList<BindingConfiguration>();
-
         final EEResourceReferenceProcessorRegistry registry = deploymentUnit.getAttachment(Attachments.RESOURCE_REFERENCE_PROCESSOR_REGISTRY);
         final ResourceReferencesMetaData resourceRefs = environment.getEnvironment().getResourceReferences();
         if (resourceRefs == null) {
@@ -151,25 +145,19 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
             } else {
                 name = environment.getDefaultContext() + resourceRef.getName();
             }
-
             Class<?> classType = null;
             if (resourceRef.getType() != null) {
                 try {
                     classType = classLoader.loadClass(resourceRef.getType());
                 } catch (ClassNotFoundException e) {
-                    throw MESSAGES.cannotLoad(e, resourceRef.getType());
+                    throw EeLogger.ROOT_LOGGER.cannotLoad(e, resourceRef.getType());
                 }
             }
-
             // our injection (source) comes from the local (ENC) lookup, no matter what.
             InjectionSource injectionSource = new LookupInjectionSource(name);
             classType = processInjectionTargets(resourceInjectionTarget, injectionSource, classLoader, deploymentReflectionIndex, resourceRef, classType);
             if (!isEmpty(resourceRef.getLookupName())) {
-                if (classType != null) {
-                    injectionSource = InjectionUtils.getInjectionSource(resourceRef.getLookupName(), classType.getName());
-                } else {
-                    injectionSource = new LookupInjectionSource(resourceRef.getLookupName());
-                }
+                injectionSource = new LookupInjectionSource(resourceRef.getLookupName(), classType != null && JAVAX_NAMING_CONTEXT.equals(classType.getName()));
             } else if (!isEmpty(resourceRef.getResUrl())) {
                 final String url = resourceRef.getResUrl();
                 if (classType != null && classType.equals(URI.class)) {
@@ -186,7 +174,7 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
                             }
                         }, new URI(url));
                     } catch (URISyntaxException e) {
-                        throw MESSAGES.cannotParseResourceRefUri(e, resourceRef.getResUrl());
+                        throw EeLogger.ROOT_LOGGER.cannotParseResourceRefUri(e, resourceRef.getResUrl());
                     }
                 } else {
                     try {
@@ -201,12 +189,12 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
                             }
                         }, new URL(url));
                     } catch (MalformedURLException e) {
-                        throw MESSAGES.cannotParseResourceRefUri(e, resourceRef.getResUrl());
+                        throw EeLogger.ROOT_LOGGER.cannotParseResourceRefUri(e, resourceRef.getResUrl());
                     }
                 }
             } else {
                 if (classType == null) {
-                    throw MESSAGES.cannotDetermineType(name);
+                    throw EeLogger.ROOT_LOGGER.cannotDetermineType(name);
                 }
                 //check if it is a well known type
                 final String lookup = ResourceInjectionAnnotationParsingProcessor.FIXED_LOCATIONS.get(classType.getName());
@@ -249,13 +237,13 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
                 try {
                     classType = this.loadClass(envEntry.getType(), classLoader);
                 } catch (ClassNotFoundException e) {
-                    throw MESSAGES.cannotLoad(e, envEntry.getType());
+                    throw EeLogger.ROOT_LOGGER.cannotLoad(e, envEntry.getType());
                 }
             }
             final String value = envEntry.getValue();
             final String lookup = envEntry.getLookupName();
             if (!isEmpty(value) && !isEmpty(lookup)) {
-                throw MESSAGES.cannotSpecifyBoth("<env-entry-value>", "<lookup-name>");
+                throw EeLogger.ROOT_LOGGER.cannotSpecifyBoth("<env-entry-value>", "<lookup-name>");
             } else if (isEmpty(lookup) && isEmpty(value)) {
                 //if no value is provided then it is not an error
                 //this reference should simply be ignored
@@ -267,7 +255,7 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
             LookupInjectionSource injectionSource = new LookupInjectionSource(name);
             classType = processInjectionTargets(resourceInjectionTarget, injectionSource, classLoader, deploymentReflectionIndex, envEntry, classType);
             if (classType == null) {
-                throw MESSAGES.cannotDetermineType("<env-entry>", name, "<env-entry-type>");
+                throw EeLogger.ROOT_LOGGER.cannotDetermineType("<env-entry>", name, "<env-entry-type>");
             }
 
 
@@ -293,19 +281,19 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
                 bindingConfiguration = new BindingConfiguration(name, new EnvEntryInjectionSource(Boolean.valueOf(value)));
             } else if (type.equals(Character.class.getName()) || type.equals("char")) {
                 if (value.length() != 1) {
-                    throw MESSAGES.invalidCharacterLength("env-entry", value);
+                    throw EeLogger.ROOT_LOGGER.invalidCharacterLength("env-entry", value);
                 }
                 bindingConfiguration = new BindingConfiguration(name, new EnvEntryInjectionSource(value.charAt(0)));
             } else if (type.equals(Class.class.getName())) {
                 try {
                     bindingConfiguration = new BindingConfiguration(name, new EnvEntryInjectionSource(classLoader.loadClass(value)));
                 } catch (ClassNotFoundException e) {
-                    throw MESSAGES.cannotLoad(value);
+                    throw EeLogger.ROOT_LOGGER.cannotLoad(value);
                 }
             } else if (classType.isEnum() || (classType.getEnclosingClass() != null && classType.getEnclosingClass().isEnum())) {
                 bindingConfiguration = new BindingConfiguration(name, new EnvEntryInjectionSource(Enum.valueOf((Class) classType, value)));
             } else {
-                throw MESSAGES.unknownElementType("env-entry", type);
+                throw EeLogger.ROOT_LOGGER.unknownElementType("env-entry", type);
             }
             bindings.add(bindingConfiguration);
         }
@@ -333,7 +321,7 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
                 try {
                     classType = classLoader.loadClass(messageRef.getType());
                 } catch (ClassNotFoundException e) {
-                    throw MESSAGES.cannotLoad(e, messageRef.getType());
+                    throw EeLogger.ROOT_LOGGER.cannotLoad(e, messageRef.getType());
                 }
             }
             // our injection (source) comes from the local (ENC) lookup, no matter what.
@@ -371,7 +359,7 @@ public class ResourceReferenceProcessor extends AbstractDeploymentDescriptorBind
 
     private Class<?> loadClass(String className, ClassLoader cl) throws ClassNotFoundException {
         if (className == null || className.trim().isEmpty()) {
-            throw MESSAGES.cannotBeNullOrEmpty("Classname", className);
+            throw EeLogger.ROOT_LOGGER.cannotBeNullOrEmpty("Classname", className);
         }
         if (className.equals(void.class.getName())) {
             return void.class;

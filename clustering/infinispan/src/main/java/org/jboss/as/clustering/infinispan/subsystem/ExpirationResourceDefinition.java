@@ -22,7 +22,9 @@
 
 package org.jboss.as.clustering.infinispan.subsystem;
 
+import org.jboss.as.clustering.controller.ReloadRequiredAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
@@ -33,6 +35,8 @@ import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -43,7 +47,7 @@ import org.jboss.dmr.ModelType;
  */
 public class ExpirationResourceDefinition extends SimpleResourceDefinition {
 
-    public static final PathElement EXPIRATION_PATH = PathElement.pathElement(ModelKeys.EXPIRATION, ModelKeys.EXPIRATION_NAME);
+    static final PathElement PATH = PathElement.pathElement(ModelKeys.EXPIRATION, ModelKeys.EXPIRATION_NAME);
 
     // attributes
     static final SimpleAttributeDefinition INTERVAL = new SimpleAttributeDefinitionBuilder(ModelKeys.INTERVAL, ModelType.LONG, true)
@@ -51,40 +55,45 @@ public class ExpirationResourceDefinition extends SimpleResourceDefinition {
             .setMeasurementUnit(MeasurementUnit.MILLISECONDS)
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(60000))
-            .build()
-    ;
+            .setDefaultValue(new ModelNode().set(60000L))
+            .build();
+
     static final SimpleAttributeDefinition LIFESPAN = new SimpleAttributeDefinitionBuilder(ModelKeys.LIFESPAN, ModelType.LONG, true)
             .setXmlName(Attribute.LIFESPAN.getLocalName())
             .setMeasurementUnit(MeasurementUnit.MILLISECONDS)
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(-1))
-            .build()
-    ;
+            .setDefaultValue(new ModelNode().set(-1L))
+            .build();
+
     static final SimpleAttributeDefinition MAX_IDLE = new SimpleAttributeDefinitionBuilder(ModelKeys.MAX_IDLE, ModelType.LONG, true)
             .setXmlName(Attribute.MAX_IDLE.getLocalName())
             .setMeasurementUnit(MeasurementUnit.MILLISECONDS)
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(-1))
-            .build()
-    ;
+            .setDefaultValue(new ModelNode().set(-1L))
+            .build();
 
-    static final AttributeDefinition[] EXPIRATION_ATTRIBUTES = { MAX_IDLE, LIFESPAN, INTERVAL };
+    static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { MAX_IDLE, LIFESPAN, INTERVAL };
 
-    public ExpirationResourceDefinition() {
-        super(EXPIRATION_PATH,
-                InfinispanExtension.getResourceDescriptionResolver(ModelKeys.EXPIRATION),
-                CacheConfigOperationHandlers.EXPIRATION_ADD,
-                ReloadRequiredRemoveStepHandler.INSTANCE);
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(PATH);
+
+        if (InfinispanModel.VERSION_1_4_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder().addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, MAX_IDLE, LIFESPAN, INTERVAL);
+        }
+    }
+
+    ExpirationResourceDefinition() {
+        super(PATH, InfinispanExtension.getResourceDescriptionResolver(ModelKeys.EXPIRATION),
+                new ReloadRequiredAddStepHandler(ATTRIBUTES), ReloadRequiredRemoveStepHandler.INSTANCE);
     }
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
         // check that we don't need a special handler here?
-        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(EXPIRATION_ATTRIBUTES);
-        for (AttributeDefinition attr : EXPIRATION_ATTRIBUTES) {
+        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(ATTRIBUTES);
+        for (AttributeDefinition attr : ATTRIBUTES) {
             resourceRegistration.registerReadWriteAttribute(attr, null, writeHandler);
         }
     }

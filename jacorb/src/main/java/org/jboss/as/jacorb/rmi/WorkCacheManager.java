@@ -28,12 +28,12 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 
-import java.util.Map;
 import java.util.HashMap;
-import java.util.WeakHashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
-import org.jboss.as.jacorb.JacORBMessages;
-
+import org.jboss.as.jacorb.logging.JacORBLogger;
 
 /**
  * Instances of this class cache the most complex analyse types.
@@ -51,69 +51,9 @@ import org.jboss.as.jacorb.JacORBMessages;
  * unfinished analysis will be returned if the same thread is already
  * working on this analysis.
  *
- * TODO: this looks like a big class loader leak waiting to happen
- *
  * @author <a href="mailto:osh@sparre.dk">Ole Husgaard</a>
  */
 class WorkCacheManager {
-
-    /**
-     * Create a new work cache manager.
-     *
-     * @param cls The class of the analysis type we cache here.
-     */
-    WorkCacheManager(final Class cls) {
-        // Find the constructor and initializer.
-        try {
-            constructor = cls.getDeclaredConstructor(new Class[]{Class.class});
-            initializer = cls.getDeclaredMethod("doAnalyze");
-        } catch (NoSuchMethodException ex) {
-            throw JacORBMessages.MESSAGES.unexpectedException(ex);
-        }
-
-        workDone = new WeakHashMap<Class, SoftReference<ContainerAnalysis>>();
-        workInProgress = new HashMap<InProgressKey, ContainerAnalysis>();
-    }
-
-    /**
-     * Returns an analysis.
-     * If the calling thread is currently doing an analysis of this
-     * class, an unfinished analysis is returned.
-     */
-    ContainerAnalysis getAnalysis(final Class cls) throws RMIIIOPViolationException {
-        ContainerAnalysis ret = null;
-        try {
-            synchronized (this) {
-                ret = lookupDone(cls);
-                if (ret != null)
-                    return ret;
-
-                // is it work-in-progress?
-                final ContainerAnalysis inProgress = workInProgress.get(new InProgressKey(cls, Thread.currentThread()));
-                if (inProgress != null) {
-                        return inProgress; // return unfinished
-
-                    // Do not wait for the other thread: We may deadlock
-                    // Double work is better that deadlock...
-                }
-
-                ret = createWorkInProgress(cls);
-            }
-
-            // Do the work
-            doTheWork(cls, ret);
-        } finally {
-            // We did it
-            synchronized (this) {
-                workInProgress.remove(new InProgressKey(cls, Thread.currentThread()));
-                if(ret != null) {
-                    workDone.put(cls, new SoftReference<ContainerAnalysis>(ret));
-                }
-                notifyAll();
-            }
-        }
-        return ret;
-    }
 
     /**
      * The analysis constructor of our analysis class.
@@ -138,6 +78,85 @@ class WorkCacheManager {
      * analysis.
      */
     private final Map<InProgressKey, ContainerAnalysis> workInProgress;
+
+    private final Map<ClassLoader, Set<Class<?>>> classesByLoader;
+
+    /**
+     * Create a new work cache manager.
+     *
+     * @param cls The class of the analysis type we cache here.
+     */
+    WorkCacheManager(final Class cls) {
+        // Find the constructor and initializer.
+        try {
+            constructor = cls.getDeclaredConstructor(new Class[]{Class.class});
+            initializer = cls.getDeclaredMethod("doAnalyze");
+        } catch (NoSuchMethodException ex) {
+            throw JacORBLogger.ROOT_LOGGER.unexpectedException(ex);
+        }
+        workDone = new HashMap<Class, SoftReference<ContainerAnalysis>>();
+        workInProgress = new HashMap<InProgressKey, ContainerAnalysis>();
+        classesByLoader = new HashMap<ClassLoader, Set<Class<?>>>();
+    }
+
+    public void clearClassLoader(final ClassLoader cl) {
+        Set<Class<?>> classes = classesByLoader.remove(cl);
+        if(classes != null) {
+            for(Class<?> clazz : classes) {
+                workDone.remove(clazz);
+            }
+        }
+    }
+
+    /**
+     * Returns an analysis.
+     * If the calling thread is currently doing an analysis of this
+     * class, an unfinished analysis is returned.
+     */
+    ContainerAnalysis getAnalysis(final Class cls) throws RMIIIOPViolationException {
+        ContainerAnalysis ret = null;
+        boolean created = false;
+        try {
+            synchronized (this) {
+                ret = lookupDone(cls);
+                if (ret != null) {
+                    return ret;
+                }
+
+                // is it work-in-progress?
+                final ContainerAnalysis inProgress = workInProgress.get(new InProgressKey(cls, Thread.currentThread()));
+                if (inProgress != null) {
+                        return inProgress; // return unfinished
+
+                    // Do not wait for the other thread: We may deadlock
+                    // Double work is better that deadlock...
+                }
+
+                ret = createWorkInProgress(cls);
+            }
+            created = true;
+            // Do the work
+            doTheWork(cls, ret);
+        } finally {
+            // We did it
+            synchronized (this) {
+                if(created) {
+                    workInProgress.remove(new InProgressKey(cls, Thread.currentThread()));
+                    workDone.put(cls, new SoftReference<ContainerAnalysis>(ret));
+                    ClassLoader classLoader = cls.getClassLoader();
+                    if (classLoader != null) {
+                        Set<Class<?>> classes = classesByLoader.get(classLoader);
+                        if (classes == null) {
+                            classesByLoader.put(classLoader, classes = new HashSet<Class<?>>());
+                        }
+                        classes.add(cls);
+                    }
+                }
+                notifyAll();
+            }
+        }
+        return ret;
+    }
 
     /**
      * Lookup an analysis in the fully done map.

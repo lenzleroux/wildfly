@@ -7,13 +7,11 @@
     <parent>
         <groupId>org.wildfly</groupId>
         <artifactId>wildfly-testsuite</artifactId>
-        <version>8.0.1.Final-SNAPSHOT</version>
+        <version>9.0.0.Alpha1-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.wildfly</groupId>
     <artifactId>wildfly-ts-integ</artifactId>
     <packaging>pom</packaging>
-    <version>8.0.1.Final-SNAPSHOT</version>
 
     <name>WildFly Test Suite: Integration</name>
 
@@ -41,9 +39,6 @@
         <!-- Used to provide an absolute location for the XSLT scripts. -->
         <xslt.scripts.dir>${jbossas.ts.integ.dir}/src/test/xslt</xslt.scripts.dir>
 
-        <!-- used to override HA configuration file names to test with alternative configuration files -->
-        <standalone.ha.xml>standalone-ha.xml</standalone.ha.xml>
-
         <ts.skipTests>${skipTests}</ts.skipTests>
         <enforcer.skip>true</enforcer.skip>
     </properties>
@@ -61,10 +56,11 @@
                 <module>xts</module>
                 <module>rts</module>
                 <module>rbac</module>
-                <module>clust</module>
+                <module>clustering</module>
                 <module>multinode</module>
                 <module>manualmode</module>
-                <module>patching</module>
+                <module>picketlink</module>
+                <module>secman</module>
             </modules>
         </profile>
         <!-- Define ts.integration uber-group. -->
@@ -74,14 +70,15 @@
             <modules>
                 <module>smoke</module>
                 <module>basic</module>
-                <module>clust</module>
+                <module>clustering</module>
                 <module>iiop</module>
                 <module>xts</module>
                 <module>rts</module>
                 <module>rbac</module>
                 <module>multinode</module>
                 <module>manualmode</module>
-                <module>patching</module>
+                <module>picketlink</module>
+                <module>secman</module>
             </modules>
         </profile>
 
@@ -103,12 +100,12 @@
             </modules>
         </profile>
 
-        <!-- -Dts.clust -->
+        <!-- -Dts.clustering -->
         <profile>
-            <id>ts.integ.group.clust</id>
-            <activation><property><name>ts.clust</name></property></activation>
+            <id>ts.integ.group.clustering</id>
+            <activation><property><name>ts.clustering</name></property></activation>
             <modules>
-                <module>clust</module>
+                <module>clustering</module>
             </modules>
         </profile>
 
@@ -166,12 +163,21 @@
             </modules>
         </profile>
 
-        <!-- -Dts.patching -->
+        <!-- -Dts.picketlink -->
         <profile>
-            <id>ts.integ.group.patching</id>
-            <activation><property><name>ts.patching</name></property></activation>
+            <id>ts.integ.group.picketlink</id>
+            <activation><property><name>ts.picketlink</name></property></activation>
             <modules>
-                <module>patching</module>
+                <module>picketlink</module>
+            </modules>
+        </profile>
+
+        <!-- -Dts.secman -->
+        <profile>
+            <id>ts.integ.group.secman</id>
+            <activation><property><name>ts.secman</name></property></activation>
+            <modules>
+                <module>secman</module>
             </modules>
         </profile>
     </profiles>
@@ -209,6 +215,11 @@
                                          <include>standalone-ec2-*.xml</include>
                                          <include>standalone-gossip-*.xml</include>
                                     </includes>
+                                </resource>
+                                <resource>
+                                    <!-- Add the Picketlink config to the standalone/config directory, so it will be processed as well -->
+                                    <directory>${basedir}/target/jbossas/docs/examples/configs</directory>
+                                    <includes><include>standalone-picketlink.xml</include></includes>
                                 </resource>
                             </resources>
                         </configuration>
@@ -269,22 +280,27 @@
     <dependencies>
         <!-- Dependencies specific to the integration tests. -->
         <dependency>
+            <groupId>org.syslog4j</groupId>
+            <artifactId>syslog4j</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.wildfly</groupId>
             <artifactId>wildfly-webservices-tests-integration</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-           <groupId>org.wildfly</groupId>
-           <artifactId>wildfly-model-test</artifactId>
+           <groupId>org.wildfly.core</groupId>
+            <artifactId>wildfly-model-test</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.wildfly</groupId>
+            <groupId>org.wildfly.core</groupId>
             <artifactId>wildfly-core-model-test-framework</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.wildfly</groupId>
+            <groupId>org.wildfly.core</groupId>
             <artifactId>wildfly-subsystem-test</artifactId>
             <type>pom</type>
             <scope>test</scope>

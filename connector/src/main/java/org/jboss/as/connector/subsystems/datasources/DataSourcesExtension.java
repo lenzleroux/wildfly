@@ -21,35 +21,6 @@
  */
 package org.jboss.as.connector.subsystems.datasources;
 
-import org.jboss.as.controller.Extension;
-import org.jboss.as.controller.ExtensionContext;
-import org.jboss.as.controller.SimpleAttributeDefinition;
-import org.jboss.as.controller.SubsystemRegistration;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
-import org.jboss.as.controller.parsing.ExtensionParsingContext;
-import org.jboss.as.controller.persistence.SubsystemMarshallingContext;
-import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.Property;
-import org.jboss.jca.common.api.metadata.common.Capacity;
-import org.jboss.jca.common.api.metadata.common.Recovery;
-import org.jboss.jca.common.api.metadata.ds.DataSources;
-import org.jboss.jca.common.api.metadata.ds.Driver;
-import org.jboss.jca.common.api.metadata.ds.DsSecurity;
-import org.jboss.jca.common.api.metadata.ds.Validation;
-import org.jboss.jca.common.api.metadata.ds.v11.DataSource;
-import org.jboss.jca.common.api.metadata.ds.v11.XaDataSource;
-import org.jboss.jca.common.api.metadata.ds.v12.DsPool;
-import org.jboss.staxmapper.XMLElementReader;
-import org.jboss.staxmapper.XMLElementWriter;
-import org.jboss.staxmapper.XMLExtendedStreamReader;
-import org.jboss.staxmapper.XMLExtendedStreamWriter;
-
-import javax.xml.stream.XMLStreamConstants;
-import javax.xml.stream.XMLStreamException;
-import java.util.List;
-
 import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.BACKGROUNDVALIDATION;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.BACKGROUNDVALIDATIONMILLIS;
@@ -70,6 +41,7 @@ import static org.jboss.as.connector.subsystems.datasources.Constants.ALLOCATION
 import static org.jboss.as.connector.subsystems.datasources.Constants.ALLOCATION_RETRY_WAIT_MILLIS;
 import static org.jboss.as.connector.subsystems.datasources.Constants.ALLOW_MULTIPLE_USERS;
 import static org.jboss.as.connector.subsystems.datasources.Constants.CHECK_VALID_CONNECTION_SQL;
+import static org.jboss.as.connector.subsystems.datasources.Constants.CONNECTABLE;
 import static org.jboss.as.connector.subsystems.datasources.Constants.CONNECTION_LISTENER_CLASS;
 import static org.jboss.as.connector.subsystems.datasources.Constants.CONNECTION_LISTENER_PROPERTIES;
 import static org.jboss.as.connector.subsystems.datasources.Constants.CONNECTION_PROPERTIES;
@@ -114,6 +86,8 @@ import static org.jboss.as.connector.subsystems.datasources.Constants.SHARE_PREP
 import static org.jboss.as.connector.subsystems.datasources.Constants.SPY;
 import static org.jboss.as.connector.subsystems.datasources.Constants.STALE_CONNECTION_CHECKER_CLASSNAME;
 import static org.jboss.as.connector.subsystems.datasources.Constants.STALE_CONNECTION_CHECKER_PROPERTIES;
+import static org.jboss.as.connector.subsystems.datasources.Constants.STATISTICS_ENABLED;
+import static org.jboss.as.connector.subsystems.datasources.Constants.TRACKING;
 import static org.jboss.as.connector.subsystems.datasources.Constants.TRACK_STATEMENTS;
 import static org.jboss.as.connector.subsystems.datasources.Constants.TRANSACTION_ISOLATION;
 import static org.jboss.as.connector.subsystems.datasources.Constants.URL_DELIMITER;
@@ -136,6 +110,36 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.parsing.ParseUtils.requireNoContent;
 
+import java.util.List;
+
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamException;
+
+import org.jboss.as.controller.Extension;
+import org.jboss.as.controller.ExtensionContext;
+import org.jboss.as.controller.SimpleAttributeDefinition;
+import org.jboss.as.controller.SubsystemRegistration;
+import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
+import org.jboss.as.controller.parsing.ExtensionParsingContext;
+import org.jboss.as.controller.persistence.SubsystemMarshallingContext;
+import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.Property;
+import org.jboss.jca.common.api.metadata.common.Capacity;
+import org.jboss.jca.common.api.metadata.common.Recovery;
+import org.jboss.jca.common.api.metadata.ds.DataSource;
+import org.jboss.jca.common.api.metadata.ds.DataSources;
+import org.jboss.jca.common.api.metadata.ds.Driver;
+import org.jboss.jca.common.api.metadata.ds.DsPool;
+import org.jboss.jca.common.api.metadata.ds.DsSecurity;
+import org.jboss.jca.common.api.metadata.ds.Validation;
+import org.jboss.jca.common.api.metadata.ds.XaDataSource;
+import org.jboss.staxmapper.XMLElementReader;
+import org.jboss.staxmapper.XMLElementWriter;
+import org.jboss.staxmapper.XMLExtendedStreamReader;
+import org.jboss.staxmapper.XMLExtendedStreamWriter;
+
 /**
  * @author <a href="mailto:stefano.maestri@redhat.com">Stefano Maestri</a>
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
@@ -146,7 +150,7 @@ public class DataSourcesExtension implements Extension {
     public static final String SUBSYSTEM_NAME = Constants.DATASOURCES;
     private static final String RESOURCE_NAME = DataSourcesExtension.class.getPackage().getName() + ".LocalDescriptions";
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MAJOR_VERSION = 3;
     private static final int MANAGEMENT_API_MINOR_VERSION = 0;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
@@ -188,6 +192,7 @@ public class DataSourcesExtension implements Extension {
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.DATASOURCES_1_0.getUriString(), DataSourceSubsystemParser.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.DATASOURCES_1_1.getUriString(), DataSourceSubsystemParser.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.DATASOURCES_2_0.getUriString(), DataSourceSubsystemParser.INSTANCE);
+        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.DATASOURCES_3_0.getUriString(), DataSourceSubsystemParser.INSTANCE);
     }
 
     public static final class DataSourceSubsystemParser implements XMLStreamConstants, XMLElementReader<List<ModelNode>>,
@@ -251,6 +256,9 @@ public class DataSourcesExtension implements Extension {
                 USE_JAVA_CONTEXT.marshallAsAttribute(dataSourceNode, writer);
                 SPY.marshallAsAttribute(dataSourceNode, writer);
                 USE_CCM.marshallAsAttribute(dataSourceNode, writer);
+                CONNECTABLE.marshallAsAttribute(dataSourceNode, writer);
+                TRACKING.marshallAsAttribute(dataSourceNode, writer);
+                STATISTICS_ENABLED.marshallAsAttribute(dataSourceNode, writer);
 
                 if (!isXADataSource) {
                     CONNECTION_URL.marshallAsElement(dataSourceNode, writer);
@@ -617,7 +625,8 @@ public class DataSourcesExtension implements Extension {
                         break;
                     }
                     case DATASOURCES_1_1:
-                    case DATASOURCES_2_0:{
+                    case DATASOURCES_2_0:
+                    case DATASOURCES_3_0:{
                         localName = reader.getLocalName();
                         Element element = Element.forName(reader.getLocalName());
                         SUBSYSTEM_DATASOURCES_LOGGER.tracef("%s -> %s", localName, element);

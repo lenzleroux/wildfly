@@ -27,11 +27,13 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_
 import java.util.List;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.messaging.BinderServiceUtil;
 import org.jboss.as.messaging.CommonAttributes;
 import org.jboss.as.messaging.MessagingServices;
 import org.jboss.dmr.ModelNode;
@@ -48,21 +50,28 @@ import org.jboss.msc.service.ServiceTarget;
  */
 public class JMSTopicAdd extends AbstractAddStepHandler {
 
-    public static final JMSTopicAdd INSTANCE = new JMSTopicAdd();
+    public static final JMSTopicAdd INSTANCE = new JMSTopicAdd(JMSTopicDefinition.ATTRIBUTES);
 
-    protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
-        CommonAttributes.DESTINATION_ENTRIES.validateAndSet(operation, model);
+    private JMSTopicAdd(AttributeDefinition... attributes) {
+        super(attributes);
     }
 
+    @Override
     protected void performRuntime(OperationContext context, ModelNode operation, ModelNode model, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> newControllers) throws OperationFailedException {
         final PathAddress address = PathAddress.pathAddress(operation.get(OP_ADDR));
         final String name = address.getLastElement().getValue();
         final ServiceName hqServiceName = MessagingServices.getHornetQServiceName(PathAddress.pathAddress(operation.get(ModelDescriptionConstants.OP_ADDR)));
         final ServiceTarget serviceTarget = context.getServiceTarget();
 
+        // Do not pass the JNDI bindings to HornetQ but install them directly instead so that the
+        // dependencies from the BinderServices to the JMSQueueService are not broken
+        JMSTopicService jmsTopicService = JMSTopicService.installService(verificationHandler, newControllers, name, hqServiceName, serviceTarget, new String[0]);
+
         final ModelNode entries = CommonAttributes.DESTINATION_ENTRIES.resolveModelAttribute(context, model);
         final String[] jndiBindings = JMSServices.getJndiBindings(entries);
-        JMSTopicService.installService(verificationHandler, newControllers, name, hqServiceName, serviceTarget, jndiBindings);
+        for (String jndiBinding : jndiBindings) {
+            BinderServiceUtil.installBinderService(serviceTarget, jndiBinding, jmsTopicService);
+        }
     }
 
     /**

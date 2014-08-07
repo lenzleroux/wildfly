@@ -28,16 +28,16 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.jboss.jca.common.CommonBundle;
+import org.jboss.jca.common.api.metadata.ds.DataSource;
+import org.jboss.jca.common.api.metadata.ds.DsPool;
 import org.jboss.jca.common.api.metadata.ds.DsSecurity;
 import org.jboss.jca.common.api.metadata.ds.Statement;
 import org.jboss.jca.common.api.metadata.ds.TimeOut;
 import org.jboss.jca.common.api.metadata.ds.TransactionIsolation;
 import org.jboss.jca.common.api.metadata.ds.Validation;
-import org.jboss.jca.common.api.metadata.ds.v12.DataSource;
-import org.jboss.jca.common.api.metadata.ds.v12.DsPool;
 import org.jboss.jca.common.api.validator.ValidateException;
 import org.jboss.jca.common.metadata.ds.DataSourceAbstractImpl;
-import org.jboss.jca.common.metadata.ds.v12.DataSourceImpl;
+import org.jboss.jca.common.metadata.ds.DataSourceImpl;
 import org.jboss.logging.Messages;
 
 /** A modifiable DataSourceImpl to add connection properties
@@ -64,13 +64,10 @@ public class ModifiableDataSource extends DataSourceAbstractImpl implements Data
 
     private String dataSourceClass;
 
-    private final String driver;
-
     private final HashMap<String, String> connectionProperties;
 
-    private final String newConnectionSql;
-
     private final DsPool pool;
+
 
     /**
      * Create a new DataSourceImpl.
@@ -104,22 +101,20 @@ public class ModifiableDataSource extends DataSourceAbstractImpl implements Data
                                 TimeOut timeOut, DsSecurity security, Statement statement, Validation validation,
                                 String urlDelimiter, String urlSelectorStrategyClassName, String newConnectionSql,
                                 Boolean useJavaContext, String poolName, Boolean enabled, String jndiName,
-                                Boolean spy, Boolean useccm, Boolean jta, DsPool pool)
+                                Boolean spy, Boolean useccm, Boolean jta, final Boolean connectable, final Boolean tracking, DsPool pool)
             throws ValidateException {
         super(transactionIsolation, timeOut, security, statement, validation, urlDelimiter,
-                urlSelectorStrategyClassName, useJavaContext, poolName, enabled, jndiName, spy, useccm);
+                urlSelectorStrategyClassName, useJavaContext, poolName, enabled, jndiName, spy, useccm, driver, newConnectionSql,connectable,tracking);
         this.jta = jta;
         this.connectionUrl = connectionUrl;
         this.driverClass = driverClass;
         this.dataSourceClass = dataSourceClass;
-        this.driver = driver;
         if (connectionProperties != null) {
             this.connectionProperties = new HashMap<String, String>(connectionProperties.size());
             this.connectionProperties.putAll(connectionProperties);
         } else {
             this.connectionProperties = new HashMap<String, String>(0);
         }
-        this.newConnectionSql = newConnectionSql;
         this.pool = pool;
         this.validate();
     }
@@ -131,6 +126,15 @@ public class ModifiableDataSource extends DataSourceAbstractImpl implements Data
         return jta;
     }
 
+    @Override
+    public Boolean isConnectable() {
+        return connectable;
+    }
+
+    @Override
+    public Boolean isTracking() {
+        return tracking;
+    }
     /**
      * Get the connectionUrl.
      *
@@ -443,7 +447,7 @@ public class ModifiableDataSource extends DataSourceAbstractImpl implements Data
                 timeOut, security, statement, validation,
                 urlDelimiter, urlSelectorStrategyClassName, newConnectionSql,
                 useJavaContext, poolName, enabled, jndiName,
-                spy, useCcm, jta, pool);
+                spy, useCcm, jta, connectable, tracking, pool);
 
     }
 }

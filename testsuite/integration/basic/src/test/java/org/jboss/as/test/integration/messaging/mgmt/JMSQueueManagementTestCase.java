@@ -22,36 +22,39 @@
 
 package org.jboss.as.test.integration.messaging.mgmt;
 
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
 import javax.jms.Message;
+import javax.jms.MessageConsumer;
 import javax.jms.MessageProducer;
 import javax.jms.Queue;
 import javax.jms.QueueConnection;
 import javax.jms.QueueSession;
 import javax.jms.TopicSession;
 
-import org.hornetq.core.remoting.impl.netty.TransportConstants;
-import org.junit.Assert;
 import org.hornetq.api.core.TransportConfiguration;
 import org.hornetq.api.jms.HornetQJMSClient;
 import org.hornetq.api.jms.JMSFactoryType;
 import org.hornetq.core.remoting.impl.netty.NettyConnectorFactory;
+import org.hornetq.core.remoting.impl.netty.TransportConstants;
 import org.hornetq.jms.client.HornetQConnectionFactory;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.as.arquillian.api.ContainerResource;
 import org.jboss.as.arquillian.container.ManagementClient;
-import org.jboss.as.test.shared.TestSuiteEnvironment;
 import org.jboss.as.test.integration.common.jms.JMSOperations;
 import org.jboss.as.test.integration.common.jms.JMSOperationsProvider;
+import org.jboss.as.test.shared.TestSuiteEnvironment;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -385,7 +388,51 @@ public class JMSQueueManagementTestCase {
             if (binding.asString().equals("queue/added" + count))
                 return;
         }
-        Assert.fail("queue/added" + count + " was not found");
+        fail("queue/added" + count + " was not found");
+    }
+
+    @Test
+    public void testRemoveJndi() throws Exception {
+        String jndiName = "queue/added" + count;
+        ModelNode op = getQueueOperation("add-jndi");
+        op.get("jndi-binding").set(jndiName);
+
+        ModelNode result = execute(op, true);
+        Assert.assertFalse(result.isDefined());
+
+        op = getQueueOperation("remove-jndi");
+        op.get("jndi-binding").set(jndiName);
+        result = execute(op, true);
+        Assert.assertFalse(result.isDefined());
+
+        op = getQueueOperation("read-attribute");
+        op.get("name").set("entries");
+        result = execute(op, true);
+        Assert.assertTrue(result.isDefined());
+        for (ModelNode binding : result.asList()) {
+            if (binding.asString().equals(jndiName)) {
+                Assert.fail("found " + jndiName + " while it must be removed");
+            }
+        }
+    }
+
+    @Test
+    public void testRemoveLastJndi() throws Exception {
+        ModelNode op = getQueueOperation("remove-jndi");
+        op.get("jndi-binding").set(getQueueJndiName());
+
+        // removing the last jndi name must generate a failure
+        execute(op, false);
+
+        op = getQueueOperation("read-attribute");
+        op.get("name").set("entries");
+        ModelNode result = execute(op, true);
+        Assert.assertTrue(result.isDefined());
+        for (ModelNode binding : result.asList()) {
+            if (binding.asString().equals(getQueueJndiName()))
+                return;
+        }
+        Assert.fail(getQueueJndiName() + " was not found");
     }
 
     private ModelNode getQueueOperation(String operationName) {
@@ -412,6 +459,32 @@ public class JMSQueueManagementTestCase {
             Assert.assertEquals("failed", outcome);
             return response.get("failure-description");
         }
+    }
+
+    @Test
+    public void removeJMSQueueRemovesAllMessages() throws Exception {
+        MessageProducer producer = session.createProducer(queue);
+        producer.send(session.createTextMessage("A"));
+
+        MessageConsumer consumer = session.createConsumer(queue);
+
+        ModelNode result = execute(getQueueOperation("count-messages"), true);
+        Assert.assertTrue(result.isDefined());
+        Assert.assertEquals(1, result.asInt());
+
+        // remove the queue
+        adminSupport.removeJmsQueue(getQueueName());
+        try {
+            consumer.receive(5000);
+            fail("consumer is not valid after the queue is removed");
+        } catch (javax.jms.IllegalStateException e) {
+        }
+        // add the queue back
+        adminSupport.createJmsQueue(getQueueName(), getQueueJndiName());
+
+        result = execute(getQueueOperation("count-messages"), true);
+        Assert.assertTrue(result.isDefined());
+        Assert.assertEquals(0, result.asInt());
     }
 
     private String getQueueName() {

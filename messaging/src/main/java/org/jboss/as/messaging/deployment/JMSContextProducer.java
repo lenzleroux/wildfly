@@ -23,7 +23,6 @@
 package org.jboss.as.messaging.deployment;
 
 import static javax.jms.JMSContext.AUTO_ACKNOWLEDGE;
-import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import java.io.Serializable;
 
@@ -56,12 +55,12 @@ import javax.jms.XAJMSContext;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
+import javax.transaction.Status;
 import javax.transaction.Synchronization;
-import javax.transaction.SystemException;
-import javax.transaction.Transaction;
-import javax.transaction.TransactionManager;
+import javax.transaction.TransactionSynchronizationRegistry;
 
-import org.jboss.as.messaging.jms.TransactionManagerLocator;
+import org.jboss.as.messaging.logging.MessagingLogger;
+import org.jboss.metadata.property.PropertyReplacer;
 
 /**
  * Producer factory for JMSContext resources.
@@ -72,14 +71,27 @@ import org.jboss.as.messaging.jms.TransactionManagerLocator;
  */
 public class JMSContextProducer {
 
-    public static final String DEFAULT_JMS_CONNECTION_FACTORY_LOCATION = "java:comp/DefaultJMSConnectionFactory";
+    private static final String TRANSACTION_SYNCHRONIZATION_REGISTRY_LOOKUP = "java:comp/TransactionSynchronizationRegistry";
+    private static final Object TRANSACTION_KEY = "TRANSACTED_JMS_CONTEXT";
+
+    /**
+     * the propertyReplace is set in {@link org.jboss.as.messaging.deployment.JMSCDIExtension#wrapInjectionTarget(javax.enterprise.inject.spi.ProcessInjectionTarget)}.
+     */
+    private PropertyReplacer propertyReplacer;
+
+    public JMSContextProducer() {
+    }
+
+    void setPropertyReplacer(PropertyReplacer propertyReplacer) {
+        this.propertyReplacer = propertyReplacer;
+    }
 
     /**
      * CDI Producer method for injected {@link JMSContext}.
      */
     @Produces
     public JMSContext getJMSContext(InjectionPoint injectionPoint) throws NamingException {
-        String connectionFactoryLookup = DEFAULT_JMS_CONNECTION_FACTORY_LOCATION;
+        String connectionFactoryLookup = DefaultJMSConnectionFactoryBindingProcessor.COMP_DEFAULT_JMS_CONNECTION_FACTORY;
         String userName = null;
         String password = null;
         int ackMode = AUTO_ACKNOWLEDGE;
@@ -88,14 +100,14 @@ public class JMSContextProducer {
             // Check for @JMSConnectionFactory annotation
             if (injectionPoint.getAnnotated().isAnnotationPresent(JMSConnectionFactory.class)) {
                 JMSConnectionFactory cf = injectionPoint.getAnnotated().getAnnotation(JMSConnectionFactory.class);
-                connectionFactoryLookup = cf.value();
+                connectionFactoryLookup = propertyReplacer.replaceProperties(cf.value());
             }
 
             // Check for JMSPasswordCredential annotation
             if (injectionPoint.getAnnotated().isAnnotationPresent(JMSPasswordCredential.class)) {
                 JMSPasswordCredential credential = injectionPoint.getAnnotated().getAnnotation(JMSPasswordCredential.class);
-                userName = credential.userName();
-                password = credential.password();
+                userName = propertyReplacer.replaceProperties(credential.userName());
+                password = propertyReplacer.replaceProperties(credential.password());
             }
 
             // Check for JMSSessionMode annotation
@@ -167,24 +179,75 @@ public class JMSContextProducer {
 
         private final JMSInfo info;
         private JMSContext delegate;
-        private boolean inTx = false;
+        private boolean inTransaction = false;
 
         JMSContextWrapper(JMSInfo info) {
             this.info = info;
         }
 
-        private JMSContext create(JMSInfo info, Transaction tx) throws Exception {
+        private JMSContext create(JMSInfo info, boolean inTx) {
+            inTransaction = inTx;
+            ConnectionFactory cf = (ConnectionFactory) lookup(info.connectionFactoryLookup);
+            if (inTransaction) {
+                XAJMSContext xaContext = ((XAConnectionFactory) cf).createXAContext(info.userName, info.password);
+                return xaContext.getContext();
+            } else {
+                return cf.createContext(info.userName, info.password, info.ackMode);
+            }
+        }
+
+        private void internalClose() {
+            if (delegate != null && !inTransaction) {
+                delegate.close();
+                delegate = null;
+            }
+        }
+
+        /**
+         * create the underlying JMSContext or return it if there is already one create.
+         */
+        private synchronized JMSContext getDelegate() {
+            TransactionSynchronizationRegistry txSyncRegistry = (TransactionSynchronizationRegistry) lookup(TRANSACTION_SYNCHRONIZATION_REGISTRY_LOOKUP);
+            boolean inTx = txSyncRegistry.getTransactionStatus() == Status.STATUS_ACTIVE;
+            if (inTx) {
+                Object resource = txSyncRegistry.getResource(TRANSACTION_KEY);
+                if (resource != null) {
+                    return (JMSContext) resource;
+                } else {
+                    final JMSContext transactedContext = create(info, inTx);
+                    txSyncRegistry.putResource(TRANSACTION_KEY, resource);
+                    txSyncRegistry.registerInterposedSynchronization(new Synchronization() {
+                        @Override
+                        public void beforeCompletion() {
+                        }
+
+                        @Override
+                        public synchronized void afterCompletion(int status) {
+                            transactedContext.close();
+                            inTransaction = false;
+                        }
+                    });
+                    return transactedContext;
+                }
+            } else {
+                if (delegate == null) {
+                    try {
+                        delegate = create(info, inTx);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                return delegate;
+            }
+        }
+
+        private Object lookup(String name) {
             Context ctx = null;
             try {
                 ctx = new InitialContext();
-                ConnectionFactory cf = (ConnectionFactory) ctx.lookup(info.connectionFactoryLookup);
-                if (tx != null) {
-                    inTx = true;
-                    XAJMSContext xaContext = ((XAConnectionFactory) cf).createXAContext(info.userName, info.password);
-                    return xaContext.getContext();
-                } else {
-                    return cf.createContext(info.userName, info.password, info.ackMode);
-                }
+                return ctx.lookup(name);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
             } finally {
                 if (ctx != null) {
                     try {
@@ -193,56 +256,6 @@ public class JMSContextProducer {
                     }
                 }
             }
-        }
-
-        /**
-         * Return the current transaction or {@code null} if there is none.
-         */
-        private Transaction getCurrentTransaction() {
-            TransactionManager transactionManager = TransactionManagerLocator.getTransactionManager();
-            try {
-                return (transactionManager == null) ? null : transactionManager.getTransaction();
-            } catch (SystemException e) {
-                return null;
-            }
-        }
-
-        private void internalClose() {
-            if (delegate != null) {
-                if (!inTx) {
-                    delegate.close();
-                    delegate = null;
-                }
-            }
-        }
-
-        /**
-         * create the underlying JMSContext or return it if there is already one create.
-         */
-        private synchronized JMSContext getDelegate() {
-            try {
-                final Transaction transaction = getCurrentTransaction();
-                if (delegate == null) {
-                    delegate = create(info, transaction);
-                    if (transaction != null) {
-                        transaction.registerSynchronization(new Synchronization() {
-                            @Override
-                            public void beforeCompletion() {
-                            }
-
-                            @Override
-                            public synchronized void afterCompletion(int status) {
-                                delegate.close();
-                                delegate = null;
-                                inTx = false;
-                            }
-                        });
-                    }
-                }
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-            return delegate;
         }
 
         // JMSContext interface implementation
@@ -264,7 +277,7 @@ public class JMSContextProducer {
 
         @Override
         public void setClientID(String clientID) {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
@@ -279,23 +292,23 @@ public class JMSContextProducer {
 
         @Override
         public void setExceptionListener(ExceptionListener listener) {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
         public void start() {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
 
         public void stop() {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
         public void setAutoStart(boolean autoStart) {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
@@ -305,7 +318,7 @@ public class JMSContextProducer {
 
         @Override
         public void close() {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
@@ -360,17 +373,17 @@ public class JMSContextProducer {
 
         @Override
         public void commit() {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
         public void rollback() {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
         public void recover() {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
         }
 
         @Override
@@ -455,7 +468,15 @@ public class JMSContextProducer {
 
         @Override
         public void acknowledge() {
-            throw MESSAGES.callNotPermittedOnInjectedJMSContext();
+            throw MessagingLogger.ROOT_LOGGER.callNotPermittedOnInjectedJMSContext();
+        }
+
+        @Override
+        public String toString() {
+            return "JMSContextWrapper{" +
+                    ", delegate=" + getDelegate() +
+                    ", inTransaction=" + inTransaction +
+                    '}';
         }
     }
 }

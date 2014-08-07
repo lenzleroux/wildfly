@@ -21,6 +21,9 @@
  */
 package org.jboss.as.connector.subsystems.resourceadapters;
 
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
+
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.AttributeMarshaller;
 import org.jboss.as.controller.ModelVersion;
@@ -38,21 +41,16 @@ import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 import org.jboss.jca.common.api.metadata.Defaults;
-import org.jboss.jca.common.api.metadata.common.CommonSecurity;
-import org.jboss.jca.common.api.metadata.common.CommonXaPool;
 import org.jboss.jca.common.api.metadata.common.Credential;
 import org.jboss.jca.common.api.metadata.common.Recovery;
+import org.jboss.jca.common.api.metadata.common.Security;
 import org.jboss.jca.common.api.metadata.common.TransactionSupportEnum;
-import org.jboss.jca.common.api.metadata.common.v10.CommonConnDef;
-import org.jboss.jca.common.api.metadata.common.v11.WorkManagerSecurity;
+import org.jboss.jca.common.api.metadata.common.XaPool;
+import org.jboss.jca.common.api.metadata.ds.DataSource;
 import org.jboss.jca.common.api.metadata.ds.TimeOut;
-import org.jboss.jca.common.api.metadata.ds.v11.DataSource;
-import org.jboss.jca.common.api.metadata.resourceadapter.v10.ResourceAdapter;
-
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
-
-
+import org.jboss.jca.common.api.metadata.resourceadapter.Activation;
+import org.jboss.jca.common.api.metadata.resourceadapter.ConnectionDefinition;
+import org.jboss.jca.common.api.metadata.resourceadapter.WorkManagerSecurity;
 
 
 /**
@@ -82,6 +80,10 @@ public class Constants {
     private static final String USE_JAVA_CONTEXT_NAME = "use-java-context";
 
     private static final String ENABLED_NAME = "enabled";
+
+    private static final String CONNECTABLE_NAME = "connectable";
+
+    private static final String TRACKING_NAME = "tracking";
 
     private static final String JNDINAME_NAME = "jndi-name";
 
@@ -183,16 +185,28 @@ public class Constants {
     public static final String CLEAR_STATISTICS = "clear-statistics";
 
 
-    static final SimpleAttributeDefinition CLASS_NAME = new SimpleAttributeDefinition(CLASS_NAME_NAME, CommonConnDef.Attribute.CLASS_NAME.getLocalName(), new ModelNode(), ModelType.STRING, false, true, MeasurementUnit.NONE);
+    static final SimpleAttributeDefinition CLASS_NAME = new SimpleAttributeDefinitionBuilder(CLASS_NAME_NAME, ModelType.STRING, false)
+            .setXmlName(ConnectionDefinition.Attribute.CLASS_NAME.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition JNDINAME = new SimpleAttributeDefinition(JNDINAME_NAME, CommonConnDef.Attribute.JNDI_NAME.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition JNDINAME = new SimpleAttributeDefinitionBuilder(JNDINAME_NAME, ModelType.STRING, true)
+            .setXmlName(ConnectionDefinition.Attribute.JNDI_NAME.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    public static final SimpleAttributeDefinition CONFIG_PROPERTIES = new SimpleAttributeDefinition(CONFIG_PROPERTIES_NAME, CommonConnDef.Tag.CONFIG_PROPERTY.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+    public static final SimpleAttributeDefinition CONFIG_PROPERTIES = new SimpleAttributeDefinitionBuilder(CONFIG_PROPERTIES_NAME, ModelType.STRING, true)
+            .setXmlName(ConnectionDefinition.Tag.CONFIG_PROPERTY.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    static final SimpleAttributeDefinition CONFIG_PROPERTY_VALUE = new SimpleAttributeDefinition(CONFIG_PROPERTY_VALUE_NAME, CommonConnDef.Tag.CONFIG_PROPERTY.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+    static final SimpleAttributeDefinition CONFIG_PROPERTY_VALUE = new SimpleAttributeDefinitionBuilder(CONFIG_PROPERTY_VALUE_NAME, ModelType.STRING, true)
+            .setXmlName(ConnectionDefinition.Tag.CONFIG_PROPERTY.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
     static final SimpleAttributeDefinition ARCHIVE = SimpleAttributeDefinitionBuilder.create(ARCHIVE_NAME, ModelType.STRING)
-            .setXmlName(ResourceAdapter.Tag.ARCHIVE.getLocalName())
+            .setXmlName(Activation.Tag.ARCHIVE.getLocalName())
             .setAllowNull(true)
             .setAllowExpression(false)
             .setMeasurementUnit(MeasurementUnit.NONE)
@@ -237,9 +251,16 @@ public class Constants {
             })
             .setAlternatives(ARCHIVE_NAME).build();
 
-    static final SimpleAttributeDefinition BOOTSTRAP_CONTEXT = new SimpleAttributeDefinition(BOOTSTRAPCONTEXT_NAME, ResourceAdapter.Tag.BOOTSTRAP_CONTEXT.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+    static final SimpleAttributeDefinition BOOTSTRAP_CONTEXT = new SimpleAttributeDefinitionBuilder(BOOTSTRAPCONTEXT_NAME, ModelType.STRING, true)
+            .setXmlName(Activation.Tag.BOOTSTRAP_CONTEXT.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    static final SimpleAttributeDefinition TRANSACTION_SUPPORT = new SimpleAttributeDefinition(TRANSACTIONSUPPORT_NAME, ResourceAdapter.Tag.TRANSACTION_SUPPORT.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE, new EnumValidator<TransactionSupportEnum>(TransactionSupportEnum.class, true, true));
+    static final SimpleAttributeDefinition TRANSACTION_SUPPORT = new SimpleAttributeDefinitionBuilder(TRANSACTIONSUPPORT_NAME, ModelType.STRING, true)
+            .setXmlName(Activation.Tag.TRANSACTION_SUPPORT.getLocalName())
+            .setAllowExpression(true)
+            .setValidator(new EnumValidator<TransactionSupportEnum>(TransactionSupportEnum.class, true, true))
+            .build();
 
 
     static final SimpleAttributeDefinition WM_SECURITY = new SimpleAttributeDefinitionBuilder(WM_SECURITY_NAME, ModelType.BOOLEAN)
@@ -272,9 +293,12 @@ public class Constants {
             .setXmlName(WorkManagerSecurity.Tag.DEFAULT_GROUPS.getLocalName())
             .setAllowNull(true)
             .setAllowExpression(true)
-            .setValidator(new StringLengthValidator(1, false, true))
+            .setElementValidator(new StringLengthValidator(1, false, true))
             .build();
-    static final SimpleAttributeDefinition WM_SECURITY_DEFAULT_GROUP = new SimpleAttributeDefinition(WM_SECURITY_DEFAULT_GROUP_NAME, WorkManagerSecurity.Tag.GROUP.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+    static final SimpleAttributeDefinition WM_SECURITY_DEFAULT_GROUP = new SimpleAttributeDefinitionBuilder(WM_SECURITY_DEFAULT_GROUP_NAME, ModelType.STRING, true)
+            .setXmlName(WorkManagerSecurity.Tag.GROUP.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
 
     static final SimpleAttributeDefinition WM_SECURITY_MAPPING_FROM = new SimpleAttributeDefinitionBuilder(WM_SECURITY_MAPPING_FROM_NAME, ModelType.STRING)
@@ -300,20 +324,42 @@ public class Constants {
             .build();
 
     static final StringListAttributeDefinition BEANVALIDATION_GROUPS = (new StringListAttributeDefinition.Builder(BEANVALIDATIONGROUPS_NAME))
-            .setXmlName(ResourceAdapter.Tag.BEAN_VALIDATION_GROUP.getLocalName())
+            .setXmlName(Activation.Tag.BEAN_VALIDATION_GROUP.getLocalName())
             .setAllowNull(true)
             .setAllowExpression(true)
-            .setValidator(new StringLengthValidator(1, false, true))
+            .setElementValidator(new StringLengthValidator(1, false, true))
             .build();
 
-    static final SimpleAttributeDefinition BEANVALIDATIONGROUP = new SimpleAttributeDefinition(BEANVALIDATIONGROUPS_NAME, ResourceAdapter.Tag.BEAN_VALIDATION_GROUP.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+    static final SimpleAttributeDefinition BEANVALIDATIONGROUP = new SimpleAttributeDefinitionBuilder(BEANVALIDATIONGROUPS_NAME, ModelType.STRING, true)
+            .setXmlName(Activation.Tag.BEAN_VALIDATION_GROUP.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition USE_JAVA_CONTEXT = new SimpleAttributeDefinition(USE_JAVA_CONTEXT_NAME, DataSource.Attribute.USE_JAVA_CONTEXT.getLocalName(), new ModelNode().set(Defaults.USE_JAVA_CONTEXT), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition USE_JAVA_CONTEXT = new SimpleAttributeDefinitionBuilder(USE_JAVA_CONTEXT_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(DataSource.Attribute.USE_JAVA_CONTEXT.getLocalName())
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(Defaults.USE_JAVA_CONTEXT))
+            .build();
 
-    static SimpleAttributeDefinition ENABLED = new SimpleAttributeDefinition(ENABLED_NAME, DataSource.Attribute.ENABLED.getLocalName(), new ModelNode().set(Defaults.ENABLED), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition ENABLED = new SimpleAttributeDefinitionBuilder(ENABLED_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(DataSource.Attribute.ENABLED.getLocalName())
+            .setDefaultValue(new ModelNode(Defaults.ENABLED))
+            .setAllowExpression(true)
+            .build();
 
+    static SimpleAttributeDefinition CONNECTABLE = new SimpleAttributeDefinitionBuilder(CONNECTABLE_NAME, ModelType.BOOLEAN)
+            .setXmlName(DataSource.Attribute.CONNECTABLE.getLocalName())
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(Defaults.CONNECTABLE))
+            .setAllowNull(true)
+            .build();
+    static SimpleAttributeDefinition TRACKING = new SimpleAttributeDefinitionBuilder(TRACKING_NAME, ModelType.BOOLEAN)
+            .setXmlName(DataSource.Attribute.TRACKING.getLocalName())
+            .setAllowExpression(true)
+            .setAllowNull(true)
+            .build();
     static SimpleAttributeDefinition SECURITY_DOMAIN = new SimpleAttributeDefinitionBuilder(SECURITY_DOMAIN_NAME, ModelType.STRING)
-            .setXmlName(CommonSecurity.Tag.SECURITY_DOMAIN.getLocalName())
+            .setXmlName(Security.Tag.SECURITY_DOMAIN.getLocalName())
             .setAllowExpression(true)
             .setAllowNull(true)
             .setAlternatives(SECURITY_DOMAIN_AND_APPLICATION_NAME, APPLICATION_NAME)
@@ -323,7 +369,7 @@ public class Constants {
 
 
     static final SimpleAttributeDefinition SECURITY_DOMAIN_AND_APPLICATION = new SimpleAttributeDefinitionBuilder(SECURITY_DOMAIN_AND_APPLICATION_NAME, ModelType.STRING)
-            .setXmlName(CommonSecurity.Tag.SECURITY_DOMAIN_AND_APPLICATION.getLocalName())
+            .setXmlName(Security.Tag.SECURITY_DOMAIN_AND_APPLICATION.getLocalName())
             .setAllowExpression(true)
             .setAllowNull(true)
             .setAlternatives(SECURITY_DOMAIN_NAME, APPLICATION_NAME)
@@ -332,56 +378,88 @@ public class Constants {
             .build();
 
     static final SimpleAttributeDefinition APPLICATION = new SimpleAttributeDefinitionBuilder(APPLICATION_NAME, ModelType.BOOLEAN)
-            .setXmlName(CommonSecurity.Tag.APPLICATION.getLocalName())
+            .setXmlName(Security.Tag.APPLICATION.getLocalName())
             .setDefaultValue(new ModelNode(Defaults.APPLICATION_MANAGED_SECURITY))
             .setAllowExpression(true)
             .setAllowNull(true)
             .setMeasurementUnit(MeasurementUnit.NONE)
-            .setAlternatives(SECURITY_DOMAIN_NAME,SECURITY_DOMAIN_AND_APPLICATION_NAME)
+            .setAlternatives(SECURITY_DOMAIN_NAME, SECURITY_DOMAIN_AND_APPLICATION_NAME)
             .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SECURITY_DOMAIN_REF)
             .addAccessConstraint(ResourceAdaptersExtension.RA_SECURITY_DEF)
             .build();
 
 
-    static SimpleAttributeDefinition ALLOCATION_RETRY = new SimpleAttributeDefinition(ALLOCATION_RETRY_NAME, TimeOut.Tag.ALLOCATION_RETRY.getLocalName(), new ModelNode(), ModelType.INT, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition ALLOCATION_RETRY = new SimpleAttributeDefinitionBuilder(ALLOCATION_RETRY_NAME, ModelType.INT, true)
+            .setXmlName(TimeOut.Tag.ALLOCATION_RETRY.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition ALLOCATION_RETRY_WAIT_MILLIS = new SimpleAttributeDefinition(ALLOCATION_RETRY_WAIT_MILLIS_NAME, TimeOut.Tag.ALLOCATION_RETRY_WAIT_MILLIS.getLocalName(), new ModelNode(), ModelType.LONG, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition ALLOCATION_RETRY_WAIT_MILLIS = new SimpleAttributeDefinitionBuilder(ALLOCATION_RETRY_WAIT_MILLIS_NAME, ModelType.LONG, true)
+            .setXmlName(TimeOut.Tag.ALLOCATION_RETRY_WAIT_MILLIS.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition USETRYLOCK = new SimpleAttributeDefinition(USETRYLOCK_NAME, TimeOut.Tag.USE_TRY_LOCK.getLocalName(), new ModelNode(), ModelType.LONG, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition USETRYLOCK = new SimpleAttributeDefinitionBuilder(USETRYLOCK_NAME, ModelType.LONG, true)
+            .setXmlName(TimeOut.Tag.USE_TRY_LOCK.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition USE_CCM = new SimpleAttributeDefinition(USE_CCM_NAME, DataSource.Attribute.USE_CCM.getLocalName(), new ModelNode().set(Defaults.USE_CCM), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition USE_CCM = new SimpleAttributeDefinitionBuilder(USE_CCM_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(DataSource.Attribute.USE_CCM.getLocalName())
+            .setDefaultValue(new ModelNode(Defaults.USE_CCM))
+            .setAllowExpression(true)
+            .build();
 
     static SimpleAttributeDefinition SHARABLE = new SimpleAttributeDefinitionBuilder(SHARABLE_NAME, ModelType.BOOLEAN)
             .setAllowExpression(true)
             .setAllowNull(true)
             .setDefaultValue(new ModelNode(Defaults.SHARABLE))
-            .setXmlName(org.jboss.jca.common.api.metadata.common.v11.CommonConnDef.Attribute.SHARABLE.getLocalName())
+            .setXmlName(ConnectionDefinition.Attribute.SHARABLE.getLocalName())
             .build();
 
     static SimpleAttributeDefinition ENLISTMENT = new SimpleAttributeDefinitionBuilder(ENLISTMENT_NAME, ModelType.BOOLEAN)
             .setAllowExpression(true)
             .setAllowNull(true)
             .setDefaultValue(new ModelNode(Defaults.ENLISTMENT))
-            .setXmlName(org.jboss.jca.common.api.metadata.common.v11.CommonConnDef.Attribute.ENLISTMENT.getLocalName())
+            .setXmlName(ConnectionDefinition.Attribute.ENLISTMENT.getLocalName())
             .build();
 
 
-    static SimpleAttributeDefinition INTERLEAVING = new SimpleAttributeDefinition(INTERLEAVING_NAME, CommonXaPool.Tag.INTERLEAVING.getLocalName(), new ModelNode().set(Defaults.INTERLEAVING), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition INTERLEAVING = new SimpleAttributeDefinitionBuilder(INTERLEAVING_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(XaPool.Tag.INTERLEAVING.getLocalName())
+            .setDefaultValue(new ModelNode(Defaults.INTERLEAVING))
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition NOTXSEPARATEPOOL = new SimpleAttributeDefinition(NOTXSEPARATEPOOL_NAME, CommonXaPool.Tag.NO_TX_SEPARATE_POOLS.getLocalName(), new ModelNode().set(Defaults.NO_TX_SEPARATE_POOL), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition NOTXSEPARATEPOOL = new SimpleAttributeDefinitionBuilder(NOTXSEPARATEPOOL_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(XaPool.Tag.NO_TX_SEPARATE_POOLS.getLocalName())
+            .setDefaultValue(new ModelNode(Defaults.NO_TX_SEPARATE_POOL))
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition PAD_XID = new SimpleAttributeDefinition(PAD_XID_NAME, CommonXaPool.Tag.PAD_XID.getLocalName(), new ModelNode().set(Defaults.PAD_XID), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition PAD_XID = new SimpleAttributeDefinitionBuilder(PAD_XID_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(XaPool.Tag.PAD_XID.getLocalName())
+            .setDefaultValue(new ModelNode(Defaults.PAD_XID))
+            .setAllowExpression(true)
+            .build();
 
 
     static SimpleAttributeDefinition SAME_RM_OVERRIDE = new SimpleAttributeDefinitionBuilder(SAME_RM_OVERRIDE_NAME, ModelType.BOOLEAN)
             .setAllowNull(true)
             .setAllowExpression(true)
-            .setXmlName(CommonXaPool.Tag.IS_SAME_RM_OVERRIDE.getLocalName())
+            .setXmlName(XaPool.Tag.IS_SAME_RM_OVERRIDE.getLocalName())
             .build();
 
-    static SimpleAttributeDefinition WRAP_XA_RESOURCE = new SimpleAttributeDefinition(WRAP_XA_RESOURCE_NAME, CommonXaPool.Tag.WRAP_XA_RESOURCE.getLocalName(), new ModelNode().set(Defaults.WRAP_XA_RESOURCE), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition WRAP_XA_RESOURCE = new SimpleAttributeDefinitionBuilder(WRAP_XA_RESOURCE_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(XaPool.Tag.WRAP_XA_RESOURCE.getLocalName())
+            .setDefaultValue(new ModelNode(Defaults.WRAP_XA_RESOURCE))
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition XA_RESOURCE_TIMEOUT = new SimpleAttributeDefinition(XA_RESOURCE_TIMEOUT_NAME, TimeOut.Tag.XA_RESOURCE_TIMEOUT.getLocalName(), new ModelNode(), ModelType.INT, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition XA_RESOURCE_TIMEOUT = new SimpleAttributeDefinitionBuilder(XA_RESOURCE_TIMEOUT_NAME, ModelType.INT, true)
+            .setXmlName(TimeOut.Tag.XA_RESOURCE_TIMEOUT.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
     static SimpleAttributeDefinition RECOVERY_USERNAME = new SimpleAttributeDefinitionBuilder(RECOVERY_USERNAME_NAME, ModelType.STRING, true)
             .setXmlName(Credential.Tag.USER_NAME.getLocalName())
@@ -410,9 +488,17 @@ public class Constants {
             .addAccessConstraint(ResourceAdaptersExtension.RA_SECURITY_DEF)
             .build();
 
-    static SimpleAttributeDefinition NO_RECOVERY = new SimpleAttributeDefinition(NO_RECOVERY_NAME, Recovery.Attribute.NO_RECOVERY.getLocalName(), new ModelNode(false), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition NO_RECOVERY = new SimpleAttributeDefinitionBuilder(NO_RECOVERY_NAME, ModelType.BOOLEAN, true)
+            .setXmlName(Recovery.Attribute.NO_RECOVERY.getLocalName())
+            .setDefaultValue(new ModelNode(false))
+            .setAllowExpression(true)
+            .build();
 
-    static SimpleAttributeDefinition RECOVERLUGIN_CLASSNAME = new SimpleAttributeDefinition(RECOVERLUGIN_CLASSNAME_NAME, org.jboss.jca.common.api.metadata.common.Extension.Attribute.CLASS_NAME.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+    static SimpleAttributeDefinition RECOVERLUGIN_CLASSNAME = new SimpleAttributeDefinitionBuilder(RECOVERLUGIN_CLASSNAME_NAME, ModelType.STRING, true)
+
+            .setXmlName(org.jboss.jca.common.api.metadata.common.Extension.Attribute.CLASS_NAME.getLocalName())
+            .setAllowExpression(true)
+            .build();
 
     static PropertiesAttributeDefinition RECOVERLUGIN_PROPERTIES = new PropertiesAttributeDefinition.Builder(RECOVERLUGIN_PROPERTIES_NAME, true)
             .setAllowExpression(true)
@@ -480,9 +566,9 @@ public class Constants {
             .setStorageRuntime()
             .build();
     public static SimpleAttributeDefinition WORKMANAGER_STATISTICS_ENABLED_DEPRECATED = new SimpleAttributeDefinitionBuilder(WORKMANAGER_STATISTICS_ENABLED_NAME, ModelType.BOOLEAN)
-                .setStorageRuntime()
-                .setDeprecated(ModelVersion.create(2))
-                .build();
+            .setStorageRuntime()
+            .setDeprecated(ModelVersion.create(2))
+            .build();
 
     public static final String DISTRIBUTED_STATISTICS_ENABLED_NAME = "distributed-workmanager-statistics-enabled";
     public static SimpleAttributeDefinition DISTRIBUTED_STATISTICS_ENABLED = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.STATISTICS_ENABLED, ModelType.BOOLEAN)

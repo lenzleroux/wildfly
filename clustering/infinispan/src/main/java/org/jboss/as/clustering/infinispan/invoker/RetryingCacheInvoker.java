@@ -22,16 +22,20 @@
 package org.jboss.as.clustering.infinispan.invoker;
 
 import static org.jboss.as.clustering.infinispan.InfinispanLogger.ROOT_LOGGER;
-import static org.jboss.as.clustering.infinispan.InfinispanMessages.MESSAGES;
 
 import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.Set;
+
+import javax.transaction.Status;
+import javax.transaction.SystemException;
 
 import org.infinispan.Cache;
 import org.infinispan.context.Flag;
 import org.infinispan.remoting.transport.jgroups.SuspectException;
 import org.infinispan.util.concurrent.TimeoutException;
+import org.jboss.as.clustering.infinispan.InfinispanLogger;
 
 /**
  * A cache invoker implementation that retries after a specified set of intervals upon timeout or suspect.
@@ -39,6 +43,7 @@ import org.infinispan.util.concurrent.TimeoutException;
  * @author Paul Ferraro
  */
 public class RetryingCacheInvoker implements CacheInvoker {
+    private static final Set<Integer> ALLOWED_RETRY_STATUS = new HashSet<>(Arrays.asList(Status.STATUS_NO_TRANSACTION, Status.STATUS_ACTIVE, Status.STATUS_COMMITTING, Status.STATUS_PREPARING));
 
     private final CacheInvoker invoker;
     private final int[] backOffIntervals;
@@ -80,10 +85,19 @@ public class RetryingCacheInvoker implements CacheInvoker {
             boolean retry = (i < this.backOffIntervals.length);
             try {
                 return this.invoker.invoke(cache, operation, retry ? attemptFlags : allFlags);
-            } catch (TimeoutException e) {
+            } catch (TimeoutException | SuspectException e) {
                 exception = e;
-            } catch (SuspectException e) {
-                exception = e;
+                if (cache.getCacheConfiguration().transaction().transactionMode().isTransactional()) {
+                    // We can only retry if the transaction status allows it
+                    try {
+                        int status = cache.getAdvancedCache().getTransactionManager().getStatus();
+                        if (!ALLOWED_RETRY_STATUS.contains(status)) {
+                            throw e;
+                        }
+                    } catch (SystemException se) {
+                        throw e;
+                    }
+                }
             }
 
             if (retry) {
@@ -106,6 +120,6 @@ public class RetryingCacheInvoker implements CacheInvoker {
             }
         }
 
-        throw MESSAGES.abortingCacheOperation(exception, this.backOffIntervals.length);
+        throw InfinispanLogger.ROOT_LOGGER.abortingCacheOperation(exception, this.backOffIntervals.length);
     }
 }

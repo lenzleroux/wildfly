@@ -21,7 +21,7 @@
  */
 package org.jboss.as.jacorb.rmi;
 
-import org.jboss.as.jacorb.JacORBMessages;
+import org.jboss.as.jacorb.logging.JacORBLogger;
 
 /**
  * Exception analysis.
@@ -43,6 +43,10 @@ public class ExceptionAnalysis extends ValueAnalysis {
         return (ExceptionAnalysis) cache.getAnalysis(cls);
     }
 
+    public static void clearCache(final ClassLoader classLoader) {
+        cache.clearClassLoader(classLoader);
+    }
+
     protected ExceptionAnalysis(Class cls) {
         super(cls);
     }
@@ -52,7 +56,7 @@ public class ExceptionAnalysis extends ValueAnalysis {
 
         if (!Exception.class.isAssignableFrom(cls) ||
                 RuntimeException.class.isAssignableFrom(cls))
-            throw JacORBMessages.MESSAGES.badRMIIIOPExceptionType(cls.getName(), "1.2.6");
+            throw JacORBLogger.ROOT_LOGGER.badRMIIIOPExceptionType(cls.getName(), "1.2.6");
 
         // calculate exceptionRepositoryId
         StringBuffer b = new StringBuffer("IDL:");

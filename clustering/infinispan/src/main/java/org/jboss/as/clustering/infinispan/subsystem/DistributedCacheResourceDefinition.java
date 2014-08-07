@@ -24,6 +24,9 @@ package org.jboss.as.clustering.infinispan.subsystem;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 
+import java.util.Map;
+
+import org.jboss.as.clustering.controller.validation.DoubleRangeValidatorBuilder;
 import org.jboss.as.clustering.infinispan.InfinispanLogger;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ModelVersion;
@@ -36,10 +39,17 @@ import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
+import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.services.path.ResolvePathHandler;
+import org.jboss.as.controller.transform.TransformationContext;
+import org.jboss.as.controller.transform.description.AttributeConverter;
+import org.jboss.as.controller.transform.description.DefaultCheckersAndConverter;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -49,9 +59,13 @@ import org.jboss.dmr.ModelType;
  * @author Richard Achmatowicz (c) 2011 Red Hat Inc.
  * @author Radoslav Husar
  */
-public class DistributedCacheResourceDefinition extends SharedCacheResourceDefinition {
+public class DistributedCacheResourceDefinition extends SharedStateCacheResourceDefinition {
 
-    public static final PathElement DISTRIBUTED_CACHE_PATH = PathElement.pathElement(ModelKeys.DISTRIBUTED_CACHE);
+    static final PathElement WILDCARD_PATH = pathElement(PathElement.WILDCARD_VALUE);
+
+    static PathElement pathElement(String name) {
+        return PathElement.pathElement(ModelKeys.DISTRIBUTED_CACHE, name);
+    }
 
     // attributes
     static final SimpleAttributeDefinition L1_LIFESPAN = new SimpleAttributeDefinitionBuilder(ModelKeys.L1_LIFESPAN, ModelType.LONG, true)
@@ -59,55 +73,143 @@ public class DistributedCacheResourceDefinition extends SharedCacheResourceDefin
             .setMeasurementUnit(MeasurementUnit.MILLISECONDS)
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(600000))
-            .build()
-    ;
+            .setDefaultValue(new ModelNode(600000L))
+            .build();
+
     static final SimpleAttributeDefinition OWNERS = new SimpleAttributeDefinitionBuilder(ModelKeys.OWNERS, ModelType.INT, true)
             .setXmlName(Attribute.OWNERS.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(2))
+            .setDefaultValue(new ModelNode(2))
             .setValidator(new IntRangeValidator(1, true, true))
-            .build()
-    ;
+            .build();
+
     @Deprecated
     static final SimpleAttributeDefinition VIRTUAL_NODES = new SimpleAttributeDefinitionBuilder(ModelKeys.VIRTUAL_NODES, ModelType.INT, true)
             .setXmlName(Attribute.VIRTUAL_NODES.getLocalName())
             .setAllowExpression(false)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(1))
-            .setDeprecated(ModelVersion.create(1, 4, 0))
+            .setDefaultValue(new ModelNode(1))
+            .setDeprecated(InfinispanModel.VERSION_1_4_0.getVersion())
             .setAlternatives(ModelKeys.SEGMENTS)
-            .build()
-    ;
+            .build();
+
     @SuppressWarnings("deprecation")
     static final SimpleAttributeDefinition SEGMENTS = new SimpleAttributeDefinitionBuilder(ModelKeys.SEGMENTS, ModelType.INT, true)
             .setXmlName(Attribute.SEGMENTS.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(80)) // Recommended value is 10 * max_cluster_size.
+            .setDefaultValue(new ModelNode(80)) // Recommended value is 10 * max_cluster_size.
             .setValidator(new IntRangeValidator(1, true, true))
             .setAlternatives(ModelKeys.VIRTUAL_NODES)
-            .build()
-    ;
+            .build();
 
-    static final AttributeDefinition[] DISTRIBUTED_CACHE_ATTRIBUTES = { OWNERS, SEGMENTS, L1_LIFESPAN };
+    static final SimpleAttributeDefinition CAPACITY_FACTOR = new SimpleAttributeDefinitionBuilder(ModelKeys.CAPACITY_FACTOR, ModelType.DOUBLE, true)
+            .setXmlName(Attribute.CAPACITY_FACTOR.getLocalName())
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setDefaultValue(new ModelNode(1.0f))
+            .setValidator(new DoubleRangeValidatorBuilder().lowerBound(0).upperBound(Float.MAX_VALUE).build())
+            .build();
 
-    public DistributedCacheResourceDefinition(final ResolvePathHandler resolvePathHandler, final boolean runtimeRegistration) {
-        super(DISTRIBUTED_CACHE_PATH,
-                InfinispanExtension.getResourceDescriptionResolver(ModelKeys.DISTRIBUTED_CACHE),
-                DistributedCacheAdd.INSTANCE,
-                CacheRemove.INSTANCE, resolvePathHandler, runtimeRegistration);
+    static final SimpleAttributeDefinition CONSISTENT_HASH_STRATEGY = new SimpleAttributeDefinitionBuilder(ModelKeys.CONSISTENT_HASH_STRATEGY, ModelType.STRING, true)
+            .setXmlName(Attribute.CONSISTENT_HASH_STRATEGY.getLocalName())
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setDefaultValue(new ModelNode(ConsistentHashStrategy.DEFAULT.name()))
+            .setValidator(new EnumValidator<>(ConsistentHashStrategy.class, true, true))
+            .build();
+
+    static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { OWNERS, SEGMENTS, L1_LIFESPAN, CAPACITY_FACTOR, CONSISTENT_HASH_STRATEGY };
+
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(WILDCARD_PATH);
+
+        if (InfinispanModel.VERSION_3_0_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder()
+                    .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(CAPACITY_FACTOR.getDefaultValue()), CAPACITY_FACTOR)
+                    .addRejectCheck(RejectAttributeChecker.DEFINED, CAPACITY_FACTOR)
+                    .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(CONSISTENT_HASH_STRATEGY.getDefaultValue()), CONSISTENT_HASH_STRATEGY)
+                    .addRejectCheck(RejectAttributeChecker.DEFINED, CONSISTENT_HASH_STRATEGY)
+                    .end();
+        }
+
+        if (InfinispanModel.VERSION_1_4_0.requiresTransformation(version)) {
+            // Convert segments to virtual-nodes if it is set
+            AttributeConverter converter = new AttributeConverter.DefaultAttributeConverter() {
+                @Override
+                protected void convertAttribute(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                    if (attributeValue.isDefined()) {
+                        attributeValue.set(SegmentsAndVirtualNodeConverter.segmentsToVirtualNodes(attributeValue.asString()));
+                    }
+                }
+            };
+            builder.getAttributeBuilder()
+                    .setDiscard(DiscardAttributeChecker.UNDEFINED, SEGMENTS)
+                    .setValueConverter(converter, SEGMENTS)
+                    .addRename(SEGMENTS, VIRTUAL_NODES.getName())
+                    .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, L1_LIFESPAN, OWNERS, VIRTUAL_NODES, SEGMENTS)
+                    .end();
+
+        } else if (InfinispanModel.VERSION_1_4_1.requiresTransformation(version)) {
+            DiscardAttributeChecker checker = new DiscardAttributeChecker.DefaultDiscardAttributeChecker(false, true) {
+                @Override
+                protected boolean isValueDiscardable(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                    return (attributeValue.isDefined() && attributeValue.equals(new ModelNode(1)));
+                }
+            };
+            DefaultCheckersAndConverter checkersAndConverter = new DefaultCheckersAndConverter() {
+                @Override
+                public String getRejectionLogMessage(Map<String, ModelNode> attributes) {
+                    return InfinispanLogger.ROOT_LOGGER.segmentsDoesNotSupportExpressions();
+                }
+
+                @Override
+                protected boolean rejectAttribute(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                    if (checkForExpression(attributeValue)) {
+                        return true;
+                    }
+                    return false;
+                }
+
+                @Override
+                protected void convertAttribute(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                    if (attributeValue.isDefined()) {
+                        attributeValue.set(SegmentsAndVirtualNodeConverter.virtualNodesToSegments(attributeValue));
+                    }
+                }
+
+                @Override
+                protected boolean isValueDiscardable(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                    // not used for discard - there is a separate transformer for this
+                    return false;
+                }
+            };
+            //Convert virtual-nodes to segments if it is set
+            // this is required to address WFLY-2598
+            builder.getAttributeBuilder()
+                    .setDiscard(checker, VIRTUAL_NODES)
+                    .addRejectCheck(checkersAndConverter, VIRTUAL_NODES)
+                    .setValueConverter(checkersAndConverter, VIRTUAL_NODES)
+                    .addRename(VIRTUAL_NODES, SEGMENTS.getName())
+                    .end();
+        }
+
+        SharedStateCacheResourceDefinition.buildTransformation(version, builder);
+    }
+
+    DistributedCacheResourceDefinition(ResolvePathHandler resolvePathHandler, boolean allowRuntimeOnlyRegistration) {
+        super(ModelKeys.DISTRIBUTED_CACHE, DistributedCacheAddHandler.INSTANCE, CacheRemoveHandler.INSTANCE, resolvePathHandler, allowRuntimeOnlyRegistration);
     }
 
     @Override
-    public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        super.registerAttributes(resourceRegistration);
+    public void registerAttributes(ManagementResourceRegistration registration) {
+        super.registerAttributes(registration);
 
         // check that we don't need a special handler here?
-        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(DISTRIBUTED_CACHE_ATTRIBUTES);
-        for (AttributeDefinition attr : DISTRIBUTED_CACHE_ATTRIBUTES) {
-            resourceRegistration.registerReadWriteAttribute(attr, null, writeHandler);
+        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(ATTRIBUTES);
+        for (AttributeDefinition attr : ATTRIBUTES) {
+            registration.registerReadWriteAttribute(attr, null, writeHandler);
         }
 
         // Attribute virtual-nodes has been deprecated, convert to the corresponding segments value if not the default.
@@ -146,6 +248,6 @@ public class DistributedCacheResourceDefinition extends SharedCacheResourceDefin
         };
 
         // Legacy attributes
-        resourceRegistration.registerReadWriteAttribute(VIRTUAL_NODES, null, virtualNodesWriteHandler);
+        registration.registerReadWriteAttribute(VIRTUAL_NODES, null, virtualNodesWriteHandler);
     }
 }

@@ -23,7 +23,9 @@
 package org.jboss.as.clustering.infinispan.subsystem;
 
 import org.infinispan.util.concurrent.IsolationLevel;
+import org.jboss.as.clustering.controller.ReloadRequiredAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
@@ -35,6 +37,8 @@ import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -45,7 +49,7 @@ import org.jboss.dmr.ModelType;
  */
 public class LockingResourceDefinition extends SimpleResourceDefinition {
 
-    public static final PathElement LOCKING_PATH = PathElement.pathElement(ModelKeys.LOCKING, ModelKeys.LOCKING_NAME);
+    static final PathElement PATH = PathElement.pathElement(ModelKeys.LOCKING, ModelKeys.LOCKING_NAME);
 
     // attributes
     static final SimpleAttributeDefinition ACQUIRE_TIMEOUT = new SimpleAttributeDefinitionBuilder(ModelKeys.ACQUIRE_TIMEOUT, ModelType.LONG, true)
@@ -53,59 +57,61 @@ public class LockingResourceDefinition extends SimpleResourceDefinition {
             .setMeasurementUnit(MeasurementUnit.MILLISECONDS)
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .setDefaultValue(new ModelNode().set(15000))
-            .build()
-    ;
+            .setDefaultValue(new ModelNode().set(15000L))
+            .build();
+
     static final SimpleAttributeDefinition CONCURRENCY_LEVEL = new SimpleAttributeDefinitionBuilder(ModelKeys.CONCURRENCY_LEVEL, ModelType.INT, true)
             .setXmlName(Attribute.CONCURRENCY_LEVEL.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setDefaultValue(new ModelNode().set(1000))
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition ISOLATION = new SimpleAttributeDefinitionBuilder(ModelKeys.ISOLATION, ModelType.STRING, true)
             .setXmlName(Attribute.ISOLATION.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setValidator(new EnumValidator<>(IsolationLevel.class, true, false))
             .setDefaultValue(new ModelNode().set(IsolationLevel.REPEATABLE_READ.name()))
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition STRIPING = new SimpleAttributeDefinitionBuilder(ModelKeys.STRIPING, ModelType.BOOLEAN, true)
             .setXmlName(Attribute.STRIPING.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setDefaultValue(new ModelNode().set(false))
-            .build()
-    ;
+            .build();
 
-    static final AttributeDefinition[] LOCKING_ATTRIBUTES = { ACQUIRE_TIMEOUT, CONCURRENCY_LEVEL, ISOLATION, STRIPING };
+    static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { ACQUIRE_TIMEOUT, CONCURRENCY_LEVEL, ISOLATION, STRIPING };
 
-    // metrics
-    static final AttributeDefinition CURRENT_CONCURRENCY_LEVEL = new SimpleAttributeDefinitionBuilder(MetricKeys.CURRENT_CONCURRENCY_LEVEL, ModelType.INT, true).setStorageRuntime().build();
-    static final AttributeDefinition NUMBER_OF_LOCKS_AVAILABLE = new SimpleAttributeDefinitionBuilder(MetricKeys.NUMBER_OF_LOCKS_AVAILABLE, ModelType.INT, true).setStorageRuntime().build();
-    static final AttributeDefinition NUMBER_OF_LOCKS_HELD = new SimpleAttributeDefinitionBuilder(MetricKeys.NUMBER_OF_LOCKS_HELD, ModelType.INT, true).setStorageRuntime().build();
+    private final boolean allowRuntimeOnlyRegistration;
 
-    static final AttributeDefinition[] LOCKING_METRICS = { CURRENT_CONCURRENCY_LEVEL, NUMBER_OF_LOCKS_AVAILABLE, NUMBER_OF_LOCKS_HELD };
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(PATH);
 
-    public LockingResourceDefinition() {
-        super(LOCKING_PATH,
-                InfinispanExtension.getResourceDescriptionResolver(ModelKeys.LOCKING),
-                CacheConfigOperationHandlers.LOCKING_ADD,
-                ReloadRequiredRemoveStepHandler.INSTANCE);
+        if (InfinispanModel.VERSION_1_4_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder().addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, ACQUIRE_TIMEOUT, CONCURRENCY_LEVEL, ISOLATION, STRIPING);
+        }
+    }
+
+    LockingResourceDefinition(boolean allowRuntimeOnlyRegistration) {
+        super(PATH, InfinispanExtension.getResourceDescriptionResolver(ModelKeys.LOCKING), new ReloadRequiredAddStepHandler(ATTRIBUTES), ReloadRequiredRemoveStepHandler.INSTANCE);
+        this.allowRuntimeOnlyRegistration = allowRuntimeOnlyRegistration;
     }
 
     @Override
-    public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
+    public void registerAttributes(ManagementResourceRegistration registration) {
         // check that we don't need a special handler here?
-        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(LOCKING_ATTRIBUTES);
-        for (AttributeDefinition attr : LOCKING_ATTRIBUTES) {
-            resourceRegistration.registerReadWriteAttribute(attr, null, writeHandler);
+        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(ATTRIBUTES);
+        for (AttributeDefinition attr : ATTRIBUTES) {
+            registration.registerReadWriteAttribute(attr, null, writeHandler);
         }
 
-        // register any metrics
-        for (AttributeDefinition attr : LOCKING_METRICS) {
-            resourceRegistration.registerMetric(attr, CacheMetricsHandler.INSTANCE);
+        if (this.allowRuntimeOnlyRegistration) {
+            OperationStepHandler handler = new LockingMetricsHandler();
+            for (LockingMetric metric: LockingMetric.values()) {
+                registration.registerMetric(metric.getDefinition(), handler);
+            }
         }
     }
 }

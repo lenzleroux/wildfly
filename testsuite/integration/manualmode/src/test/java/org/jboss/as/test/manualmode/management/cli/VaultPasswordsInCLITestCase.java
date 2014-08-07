@@ -43,7 +43,7 @@ import org.jboss.arquillian.junit.InSequence;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.arquillian.api.ServerSetup;
 import org.jboss.as.arquillian.api.ServerSetupTask;
-import org.jboss.as.arquillian.container.Authentication.CallbackHandler;
+import org.wildfly.test.api.Authentication.CallbackHandler;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
@@ -266,12 +266,13 @@ public class VaultPasswordsInCLITestCase {
         String vaultPasswordString = nonInteractiveSession.addSecuredAttribute(rightBlock, attributeName, rightPassword.toCharArray());
         String wrongVaultPasswordString = nonInteractiveSession.addSecuredAttribute(wrongBlock, attributeName, wrongPassword.toCharArray());
 
-        // create jboss-cli configuration file with ssl and vaulted
-        // passwords
+        String vaultConfiguration = "<vault file=\"" + VAULT_CONFIG_FILE.getAbsolutePath() + "\"/>";
+
+        // create jboss-cli configuration file with ssl and vaulted passwords
         FileUtils.write(RIGHT_VAULT_PASSWORD_FILE, Utils.propertiesReplacer(JBOSS_CLI_FILE, CLIENT_KEYSTORE_FILE, CLIENT_TRUSTSTORE_FILE,
-                vaultPasswordString, VAULT_CONFIG_FILE));
+                vaultPasswordString, vaultConfiguration));
         FileUtils.write(WRONG_VAULT_PASSWORD_FILE, Utils.propertiesReplacer(JBOSS_CLI_FILE, CLIENT_KEYSTORE_FILE, CLIENT_TRUSTSTORE_FILE,
-                wrongVaultPasswordString, VAULT_CONFIG_FILE));
+                wrongVaultPasswordString, vaultConfiguration));
 
     }
 

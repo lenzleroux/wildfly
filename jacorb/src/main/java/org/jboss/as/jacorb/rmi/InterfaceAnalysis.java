@@ -25,8 +25,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 
-import org.jboss.as.jacorb.JacORBMessages;
-
+import org.jboss.as.jacorb.logging.JacORBLogger;
 
 /**
  * Interface analysis.
@@ -53,6 +52,9 @@ public class InterfaceAnalysis extends ContainerAnalysis {
         return (InterfaceAnalysis) cache.getAnalysis(cls);
     }
 
+    public static void clearCache(final ClassLoader classLoader) {
+        cache.clearClassLoader(classLoader);
+    }
 
     protected InterfaceAnalysis(Class cls) {
         super(cls);
@@ -100,7 +102,7 @@ public class InterfaceAnalysis extends ContainerAnalysis {
     protected void analyzeOperations() throws RMIIIOPViolationException {
 
         if (!cls.isInterface())
-            throw JacORBMessages.MESSAGES.notAnInterface(cls.getName());
+            throw JacORBLogger.ROOT_LOGGER.notAnInterface(cls.getName());
 
         abstractInterface = RmiIdlUtil.isAbstractInterface(cls);
         calculateAllTypeIds();

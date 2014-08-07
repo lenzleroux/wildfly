@@ -23,7 +23,9 @@
 package org.jboss.as.clustering.infinispan.subsystem;
 
 import org.infinispan.eviction.EvictionStrategy;
+import org.jboss.as.clustering.controller.ReloadRequiredAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
@@ -34,6 +36,8 @@ import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -44,7 +48,7 @@ import org.jboss.dmr.ModelType;
  */
 public class EvictionResourceDefinition extends SimpleResourceDefinition {
 
-    public static final PathElement EVICTION_PATH = PathElement.pathElement(ModelKeys.EVICTION, ModelKeys.EVICTION_NAME);
+    static final PathElement PATH = PathElement.pathElement(ModelKeys.EVICTION, ModelKeys.EVICTION_NAME);
 
     // attributes
     static final SimpleAttributeDefinition STRATEGY = new SimpleAttributeDefinitionBuilder(ModelKeys.STRATEGY, ModelType.STRING, true)
@@ -53,40 +57,45 @@ public class EvictionResourceDefinition extends SimpleResourceDefinition {
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setValidator(new EnumValidator<>(EvictionStrategy.class, true, false))
             .setDefaultValue(new ModelNode().set(EvictionStrategy.NONE.name()))
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition MAX_ENTRIES = new SimpleAttributeDefinitionBuilder(ModelKeys.MAX_ENTRIES, ModelType.INT, true)
             .setXmlName(Attribute.MAX_ENTRIES.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setDefaultValue(new ModelNode().set(-1))
-            .build()
-    ;
+            .build();
 
-    static final AttributeDefinition[] EVICTION_ATTRIBUTES = { STRATEGY, MAX_ENTRIES };
+    static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { STRATEGY, MAX_ENTRIES };
 
-    // metrics
-    static final AttributeDefinition EVICTIONS = new SimpleAttributeDefinitionBuilder(MetricKeys.EVICTIONS, ModelType.LONG, true).setStorageRuntime().build();
+    private final boolean allowRuntimeOnlyRegistration;
 
-    static final AttributeDefinition[] EVICTION_METRICS = { EVICTIONS };
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(PATH);
 
-    public EvictionResourceDefinition() {
-        super(EVICTION_PATH,
-                InfinispanExtension.getResourceDescriptionResolver(ModelKeys.EVICTION),
-                CacheConfigOperationHandlers.EVICTION_ADD,
-                ReloadRequiredRemoveStepHandler.INSTANCE);
+        if (InfinispanModel.VERSION_1_4_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder().addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, STRATEGY, MAX_ENTRIES);
+        }
+    }
+
+    EvictionResourceDefinition(boolean allowRuntimeOnlyRegistration) {
+        super(PATH, InfinispanExtension.getResourceDescriptionResolver(ModelKeys.EVICTION), new ReloadRequiredAddStepHandler(ATTRIBUTES), ReloadRequiredRemoveStepHandler.INSTANCE);
+        this.allowRuntimeOnlyRegistration = allowRuntimeOnlyRegistration;
     }
 
     @Override
-    public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
+    public void registerAttributes(ManagementResourceRegistration registration) {
         // check that we don't need a special handler here?
-        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(EVICTION_ATTRIBUTES);
-        for (AttributeDefinition attr : EVICTION_ATTRIBUTES) {
-            resourceRegistration.registerReadWriteAttribute(attr, null, writeHandler);
+        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(ATTRIBUTES);
+        for (AttributeDefinition attr : ATTRIBUTES) {
+            registration.registerReadWriteAttribute(attr, null, writeHandler);
         }
-        // register any metrics
-        for (AttributeDefinition attr : EVICTION_METRICS) {
-            resourceRegistration.registerMetric(attr, CacheMetricsHandler.INSTANCE);
+
+        if (this.allowRuntimeOnlyRegistration) {
+            OperationStepHandler handler = new EvictionMetricsHandler();
+            for (EvictionMetric metric: EvictionMetric.values()) {
+                registration.registerMetric(metric.getDefinition(), handler);
+            }
         }
     }
 }

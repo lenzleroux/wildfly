@@ -29,8 +29,10 @@ import javax.management.MBeanServer;
 
 import org.jboss.as.jmx.MBeanRegistrationService;
 import org.jboss.as.jmx.MBeanServerService;
+import org.jboss.as.server.deployment.SetupAction;
 import org.jboss.as.server.deployment.reflect.ClassReflectionIndex;
 import org.jboss.as.service.component.ServiceComponentInstantiator;
+import org.jboss.as.service.logging.SarLogger;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceBuilder;
@@ -60,10 +62,7 @@ final class MBeanServices {
     private final ServiceTarget target;
     private boolean installed;
 
-    /**
-     * the msc deployable unit service name to be used on writable naming store invocation context setup
-     */
-    private final ServiceName duServiceName;
+    private final List<SetupAction> setupActions;
 
     /**
      *
@@ -72,23 +71,23 @@ final class MBeanServices {
      * @param mBeanClassHierarchy
      * @param target
      * @param componentInstantiator
-     * @param duServiceName the deployment unit's service name
+     * @param setupActions the deployment unit's service name
      */
     MBeanServices(final String mBeanName, final Object mBeanInstance, final List<ClassReflectionIndex<?>> mBeanClassHierarchy, final ServiceTarget target,ServiceComponentInstantiator componentInstantiator,
-                  final ServiceName duServiceName, final ClassLoader mbeanContextClassLoader) {
+                  final List<SetupAction> setupActions, final ClassLoader mbeanContextClassLoader) {
         if (mBeanClassHierarchy == null) {
-            throw SarMessages.MESSAGES.nullVar("mBeanName");
+            throw SarLogger.ROOT_LOGGER.nullVar("mBeanName");
         }
         if (mBeanInstance == null) {
-            throw SarMessages.MESSAGES.nullVar("mBeanInstance");
+            throw SarLogger.ROOT_LOGGER.nullVar("mBeanInstance");
         }
         if (target == null) {
-            throw SarMessages.MESSAGES.nullVar("target");
+            throw SarLogger.ROOT_LOGGER.nullVar("target");
         }
 
         final Method createMethod = ReflectionUtils.getMethod(mBeanClassHierarchy, CREATE_METHOD_NAME, NO_ARGS, false);
         final Method destroyMethod = ReflectionUtils.getMethod(mBeanClassHierarchy, DESTROY_METHOD_NAME, NO_ARGS, false);
-        createDestroyService = new CreateDestroyService(mBeanInstance, createMethod, destroyMethod,componentInstantiator, duServiceName, mbeanContextClassLoader);
+        createDestroyService = new CreateDestroyService(mBeanInstance, createMethod, destroyMethod,componentInstantiator, setupActions, mbeanContextClassLoader);
         createDestroyServiceName = ServiceNameFactory.newCreateDestroy(mBeanName);
         createDestroyServiceBuilder = target.addService(createDestroyServiceName, createDestroyService);
         if(componentInstantiator != null) {
@@ -98,14 +97,14 @@ final class MBeanServices {
 
         final Method startMethod = ReflectionUtils.getMethod(mBeanClassHierarchy, START_METHOD_NAME, NO_ARGS, false);
         final Method stopMethod = ReflectionUtils.getMethod(mBeanClassHierarchy, STOP_METHOD_NAME, NO_ARGS, false);
-        startStopService = new StartStopService(mBeanInstance, startMethod, stopMethod, duServiceName, mbeanContextClassLoader);
+        startStopService = new StartStopService(mBeanInstance, startMethod, stopMethod, setupActions, mbeanContextClassLoader);
         startStopServiceName = ServiceNameFactory.newStartStop(mBeanName);
         startStopServiceBuilder = target.addService(startStopServiceName, startStopService);
         startStopServiceBuilder.addDependency(createDestroyServiceName);
 
         this.mBeanName = mBeanName;
         this.target = target;
-        this.duServiceName = duServiceName;
+        this.setupActions = setupActions;
     }
 
     Service<Object> getCreateDestroyService() {
@@ -146,7 +145,7 @@ final class MBeanServices {
         startStopServiceBuilder.install();
 
         // Add service to register the mbean in the mbean server
-        final MBeanRegistrationService<Object> mbeanRegistrationService = new MBeanRegistrationService<Object>(mBeanName, duServiceName);
+        final MBeanRegistrationService<Object> mbeanRegistrationService = new MBeanRegistrationService<Object>(mBeanName, setupActions);
         target.addService(MBeanRegistrationService.SERVICE_NAME.append(mBeanName), mbeanRegistrationService)
             .addDependency(MBeanServerService.SERVICE_NAME, MBeanServer.class, mbeanRegistrationService.getMBeanServerInjector())
             .addDependency(startStopServiceName, Object.class, mbeanRegistrationService.getValueInjector())

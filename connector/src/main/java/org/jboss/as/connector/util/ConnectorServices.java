@@ -23,13 +23,13 @@
 package org.jboss.as.connector.util;
 
 import static org.jboss.as.connector.logging.ConnectorLogger.ROOT_LOGGER;
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 
 import java.util.HashMap;
 import java.util.Map;
 
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.subsystems.resourceadapters.ModifiableResourceAdapter;
-import org.jboss.jca.common.api.metadata.resourceadapter.ResourceAdapter;
+import org.jboss.jca.common.api.metadata.resourceadapter.Activation;
 import org.jboss.msc.service.ServiceName;
 
 /**
@@ -50,6 +50,9 @@ public class ConnectorServices {
 
     public static final ServiceName BEAN_VALIDATION_CONFIG_SERVICE = ServiceName.JBOSS.append("connector", "bean_validation",
             "config");
+
+    public static final ServiceName TRACER_CONFIG_SERVICE = ServiceName.JBOSS.append("connector", "tracer",
+                "config");
 
     public static final ServiceName ARCHIVE_VALIDATION_CONFIG_SERVICE = ServiceName.JBOSS.append("connector",
             "archive_validation", "config");
@@ -110,15 +113,15 @@ public class ConnectorServices {
      */
     public static <T> T notNull(T value) {
         if (value == null)
-            throw MESSAGES.serviceNotStarted();
+            throw ConnectorLogger.ROOT_LOGGER.serviceNotStarted();
         return value;
     }
 
     // resource-adapter DMR resource
 
-    public static synchronized ServiceName getDeploymentServiceName(final String raName, final ResourceAdapter raxml) {
+    public static synchronized ServiceName getDeploymentServiceName(final String raName, final Activation raxml) {
         if (raName == null)
-            throw MESSAGES.undefinedVar("RaName");
+            throw ConnectorLogger.ROOT_LOGGER.undefinedVar("RaName");
 
         ServiceName serviceName = null;
         ModifiableResourceAdapter ra = (ModifiableResourceAdapter) raxml;
@@ -133,7 +136,7 @@ public class ConnectorServices {
 
     public static synchronized ServiceName getDeploymentServiceName(String raName, String raId) {
         if (raName == null)
-            throw MESSAGES.undefinedVar("RaName");
+            throw ConnectorLogger.ROOT_LOGGER.undefinedVar("RaName");
 
         // ServiceName entry = deploymentServiceNames.get(raName);
         ServiceName serviceName = null;
@@ -150,7 +153,7 @@ public class ConnectorServices {
 
     public static synchronized ServiceName getDeploymentServiceName(final String raName) {
         if (raName == null)
-            throw MESSAGES.undefinedVar("RaName");
+            throw ConnectorLogger.ROOT_LOGGER.undefinedVar("RaName");
 
         final ServiceName serviceName = RESOURCE_ADAPTER_DEPLOYMENT_SERVICE_PREFIX.append(raName);
         ROOT_LOGGER.tracef("ConnectorServices: getDeploymentServiceName(%s) -> %s", raName, serviceName);
@@ -159,7 +162,7 @@ public class ConnectorServices {
 
     public static synchronized ServiceName getResourceAdapterServiceName(final String id) {
         if (id == null || id.trim().isEmpty()) {
-            throw MESSAGES.undefinedVar("id");
+            throw ConnectorLogger.ROOT_LOGGER.undefinedVar("id");
         }
 
         ServiceName serviceName = RESOURCE_ADAPTER_SERVICE_PREFIX.append(stripDotRarSuffix(id));

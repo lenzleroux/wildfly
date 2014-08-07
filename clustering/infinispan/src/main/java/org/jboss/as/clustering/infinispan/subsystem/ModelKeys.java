@@ -38,7 +38,7 @@ public class ModelKeys {
     static final String BACKUP_STRATEGY = "strategy";
     static final String BACKUPS = "backups";
     static final String BATCH_SIZE = "batch-size";
-    static final String BATCHING = "batching";
+    @Deprecated static final String BATCHING = "batching";
     static final String BINARY_KEYED_TABLE = "binary-keyed-table";
     static final String BINARY_KEYED_TABLE_NAME = "BINARY_KEYED_TABLE";
     static final String BRING_SITE_ONLINE = "bring-site-online";
@@ -46,10 +46,12 @@ public class ModelKeys {
     static final String CACHE = "cache";
     // static final String CACHE_MODE = "cache-mode";
     static final String CACHE_CONTAINER = "cache-container";
+    static final String CAPACITY_FACTOR = "capacity-factor";
     static final String CHUNK_SIZE = "chunk-size";
     static final String CLASS = "class";
     static final String CLUSTER = "cluster";
     static final String CONCURRENCY_LEVEL = "concurrency-level";
+    static final String CONSISTENT_HASH_STRATEGY = "consistent-hash-strategy";
     static final String DATA_COLUMN = "data-column";
     static final String DATASOURCE = "datasource";
     static final String DIALECT = "dialect";
@@ -152,6 +154,7 @@ public class ModelKeys {
     static final String TRANSPORT_NAME = "TRANSPORT";
     static final String TYPE = "type";
     @Deprecated static final String VIRTUAL_NODES = "virtual-nodes";
+    static final String VALUE = "value";
     static final String WAIT = "wait";
     static final String WRITE_BEHIND = "write-behind";
     static final String WRITE_BEHIND_NAME = "WRITE_BEHIND";

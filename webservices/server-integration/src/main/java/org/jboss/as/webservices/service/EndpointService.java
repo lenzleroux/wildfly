@@ -21,8 +21,6 @@
  */
 package org.jboss.as.webservices.service;
 
-import static org.jboss.as.webservices.WSLogger.ROOT_LOGGER;
-
 import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +34,7 @@ import org.jboss.as.security.service.SecurityDomainService;
 import org.jboss.as.server.CurrentServiceContainer;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentUnit;
+import org.jboss.as.webservices.logging.WSLogger;
 import org.jboss.as.webservices.metadata.model.EJBEndpoint;
 import org.jboss.as.webservices.security.EJBMethodSecurityAttributesAdaptor;
 import org.jboss.as.webservices.security.SecurityDomainContextAdaptor;
@@ -60,6 +59,7 @@ import org.jboss.security.SecurityConstants;
 import org.jboss.security.SecurityUtil;
 import org.jboss.ws.api.monitoring.RecordProcessor;
 import org.jboss.ws.common.ObjectNameFactory;
+import org.jboss.ws.common.management.AbstractServerConfig;
 import org.jboss.ws.common.management.ManagedEndpoint;
 import org.jboss.ws.common.monitoring.ManagedRecordProcessor;
 import org.jboss.wsf.spi.deployment.Deployment;
@@ -77,11 +77,10 @@ import org.jboss.wsf.spi.security.EJBMethodSecurityAttributeProvider;
  */
 public final class EndpointService implements Service<Endpoint> {
 
-    private static final ServiceName MBEAN_SERVER_NAME = ServiceName.JBOSS.append("mbean", "server");
     private final Endpoint endpoint;
     private final ServiceName name;
     private final InjectedValue<SecurityDomainContext> securityDomainContextValue = new InjectedValue<SecurityDomainContext>();
-    private final InjectedValue<MBeanServer> mBeanServerValue = new InjectedValue<MBeanServer>();
+    private final InjectedValue<AbstractServerConfig> serverConfigServiceValue = new InjectedValue<AbstractServerConfig>();
     private final InjectedValue<EJBViewMethodSecurityAttributesService> ejbMethodSecurityAttributeServiceValue = new InjectedValue<EJBViewMethodSecurityAttributesService>();
 
     private EndpointService(final Endpoint endpoint, final ServiceName name) {
@@ -104,7 +103,7 @@ public final class EndpointService implements Service<Endpoint> {
 
     @Override
     public void start(final StartContext context) throws StartException {
-        ROOT_LOGGER.starting(name);
+        WSLogger.ROOT_LOGGER.starting(name);
         endpoint.setSecurityDomainContext(new SecurityDomainContextAdaptor(securityDomainContextValue.getValue()));
         if (EndpointType.JAXWS_EJB3.equals(endpoint.getType())) {
             final EJBViewMethodSecurityAttributesService ejbMethodSecurityAttributeService = ejbMethodSecurityAttributeServiceValue.getValue();
@@ -120,7 +119,7 @@ public final class EndpointService implements Service<Endpoint> {
 
     @Override
     public void stop(final StopContext context) {
-        ROOT_LOGGER.stopping(name);
+        WSLogger.ROOT_LOGGER.stopping(name);
         endpoint.getLifecycleHandler().stop(endpoint);
         endpoint.setSecurityDomainContext(null);
         unregisterEndpoint(endpoint);
@@ -131,64 +130,64 @@ public final class EndpointService implements Service<Endpoint> {
     }
 
     private void registerEndpoint(final Endpoint ep) {
-        MBeanServer mbeanServer = mBeanServerValue.getValue();
+        MBeanServer mbeanServer = serverConfigServiceValue.getValue().getMbeanServer();
         if (mbeanServer != null) {
             try {
                 ManagedEndpoint jmxEndpoint = new ManagedEndpoint(endpoint, mbeanServer);
                 mbeanServer.registerMBean(jmxEndpoint, endpoint.getName());
             } catch (final JMException ex) {
-                ROOT_LOGGER.trace("Cannot register endpoint in JMX server", ex);
-                ROOT_LOGGER.cannotRegisterEndpoint(endpoint.getShortName());
+                WSLogger.ROOT_LOGGER.trace("Cannot register endpoint in JMX server", ex);
+                WSLogger.ROOT_LOGGER.cannotRegisterEndpoint(endpoint.getShortName());
             }
         } else {
-            ROOT_LOGGER.mBeanServerNotAvailable(endpoint.getShortName());
+            WSLogger.ROOT_LOGGER.mBeanServerNotAvailable(endpoint.getShortName());
         }
     }
 
     private void unregisterEndpoint(final Endpoint ep) {
-        MBeanServer mbeanServer = mBeanServerValue.getValue();
+        MBeanServer mbeanServer = serverConfigServiceValue.getValue().getMbeanServer();
         if (mbeanServer != null) {
             try {
                 mbeanServer.unregisterMBean(endpoint.getName());
             } catch (final JMException ex) {
-                ROOT_LOGGER.trace("Cannot unregister endpoint from JMX server", ex);
-                ROOT_LOGGER.cannotUnregisterEndpoint(endpoint.getShortName());
+                WSLogger.ROOT_LOGGER.trace("Cannot unregister endpoint from JMX server", ex);
+                WSLogger.ROOT_LOGGER.cannotUnregisterEndpoint(endpoint.getShortName());
             }
         } else {
-            ROOT_LOGGER.mBeanServerNotAvailable(endpoint.getShortName());
+            WSLogger.ROOT_LOGGER.mBeanServerNotAvailable(endpoint.getShortName());
         }
     }
 
     private void registerRecordProcessor(final RecordProcessor processor, final Endpoint ep) {
-        MBeanServer mbeanServer = mBeanServerValue.getValue();
+        MBeanServer mbeanServer = serverConfigServiceValue.getValue().getMbeanServer();
         if (mbeanServer != null) {
             try {
                 mbeanServer.registerMBean(processor,
                         ObjectNameFactory.create(ep.getName() + ",recordProcessor=" + processor.getName()));
             } catch (final JMException ex) {
-                ROOT_LOGGER.trace("Cannot register endpoint in JMX server, trying with the default ManagedRecordProcessor", ex);
+                WSLogger.ROOT_LOGGER.trace("Cannot register endpoint in JMX server, trying with the default ManagedRecordProcessor", ex);
                 try {
                     mbeanServer.registerMBean(new ManagedRecordProcessor(processor),
                             ObjectNameFactory.create(ep.getName() + ",recordProcessor=" + processor.getName()));
                 } catch (final JMException e) {
-                    ROOT_LOGGER.cannotRegisterRecordProcessor();
+                    WSLogger.ROOT_LOGGER.cannotRegisterRecordProcessor();
                 }
             }
         } else {
-            ROOT_LOGGER.mBeanServerNotAvailable(processor);
+            WSLogger.ROOT_LOGGER.mBeanServerNotAvailable(processor);
         }
     }
 
     private void unregisterRecordProcessor(final RecordProcessor processor, final Endpoint ep) {
-        MBeanServer mbeanServer = mBeanServerValue.getValue();
+        MBeanServer mbeanServer = serverConfigServiceValue.getValue().getMbeanServer();
         if (mbeanServer != null) {
             try {
                 mbeanServer.unregisterMBean(ObjectNameFactory.create(ep.getName() + ",recordProcessor=" + processor.getName()));
             } catch (final JMException e) {
-                ROOT_LOGGER.cannotUnregisterRecordProcessor();
+                WSLogger.ROOT_LOGGER.cannotUnregisterRecordProcessor();
             }
         } else {
-            ROOT_LOGGER.mBeanServerNotAvailable(processor);
+            WSLogger.ROOT_LOGGER.mBeanServerNotAvailable(processor);
         }
     }
 
@@ -196,8 +195,8 @@ public final class EndpointService implements Service<Endpoint> {
         return securityDomainContextValue;
     }
 
-    public Injector<MBeanServer> getMBeanServerInjector() {
-        return mBeanServerValue;
+    public Injector<AbstractServerConfig> getAbstractServerConfigInjector() {
+        return serverConfigServiceValue;
     }
 
     public Injector<EJBViewMethodSecurityAttributesService> getEJBMethodSecurityAttributeServiceInjector() {
@@ -216,8 +215,8 @@ public final class EndpointService implements Service<Endpoint> {
         builder.addDependency(DependencyType.REQUIRED,
                 SecurityDomainService.SERVICE_NAME.append(getDeploymentSecurityDomainName(endpoint)),
                 SecurityDomainContext.class, service.getSecurityDomainContextInjector());
-        builder.addDependency(DependencyType.REQUIRED, WSServices.CONFIG_SERVICE);
-        builder.addDependency(DependencyType.OPTIONAL, MBEAN_SERVER_NAME, MBeanServer.class, service.getMBeanServerInjector());
+        builder.addDependency(DependencyType.REQUIRED, WSServices.CONFIG_SERVICE, AbstractServerConfig.class,
+                service.getAbstractServerConfigInjector());
         if (EndpointType.JAXWS_EJB3.equals(endpoint.getType())) {
             builder.addDependency(DependencyType.OPTIONAL, getEJBViewMethodSecurityAttributesServiceName(unit, endpoint),
                     EJBViewMethodSecurityAttributesService.class, service.getEJBMethodSecurityAttributeServiceInjector());

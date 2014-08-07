@@ -33,6 +33,7 @@ import org.jboss.as.controller.PersistentResourceDefinition;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
@@ -41,12 +42,33 @@ import org.jboss.dmr.ModelType;
  */
 class SingleSignOnDefinition extends PersistentResourceDefinition {
 
-    static final SimpleAttributeDefinition DOMAIN = new SimpleAttributeDefinitionBuilder(Constants.DOMAIN, ModelType.STRING)
+    static final SimpleAttributeDefinition DOMAIN = new SimpleAttributeDefinitionBuilder(Constants.DOMAIN, ModelType.STRING, true)
             .setAllowNull(true)
             .setAllowExpression(true)
             .build();
+    static final SimpleAttributeDefinition PATH = new SimpleAttributeDefinitionBuilder("path", ModelType.STRING, true)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .build();
+    static final SimpleAttributeDefinition HTTP_ONLY = new SimpleAttributeDefinitionBuilder("http-only", ModelType.BOOLEAN, true)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(false))
+            .build();
 
-    static final List<AttributeDefinition> ATTRIBUTES = Arrays.<AttributeDefinition>asList(DOMAIN);
+    static final SimpleAttributeDefinition SECURE = new SimpleAttributeDefinitionBuilder("secure", ModelType.BOOLEAN, true)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(false))
+            .build();
+
+    static final SimpleAttributeDefinition COOKIE_NAME = new SimpleAttributeDefinitionBuilder("cookie-name", ModelType.STRING, true)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode("JSESSIONIDSSO"))
+            .build();
+
+    static final List<AttributeDefinition> ATTRIBUTES = Arrays.<AttributeDefinition>asList(DOMAIN, PATH, HTTP_ONLY, SECURE, COOKIE_NAME);
 
     static final SingleSignOnDefinition INSTANCE = new SingleSignOnDefinition();
 

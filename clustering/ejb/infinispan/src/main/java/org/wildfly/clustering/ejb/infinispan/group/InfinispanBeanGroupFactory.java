@@ -33,7 +33,7 @@ import org.jboss.as.clustering.marshalling.MarshallingContext;
 import org.wildfly.clustering.ejb.infinispan.BeanGroup;
 import org.wildfly.clustering.ejb.infinispan.BeanGroupEntry;
 import org.wildfly.clustering.ejb.infinispan.BeanGroupFactory;
-import org.wildfly.clustering.ejb.infinispan.InfinispanEjbLogger;
+import org.wildfly.clustering.ejb.infinispan.logging.InfinispanEjbLogger;
 
 /**
  * Encapsulates the cache mapping strategy of a bean group.
@@ -62,7 +62,7 @@ public class InfinispanBeanGroupFactory<G, I, T> implements BeanGroupFactory<G, 
     public BeanGroupEntry<I, T> createValue(G id) {
         Map<I, T> beans = new HashMap<>();
         BeanGroupEntry<I, T> entry = new InfinispanBeanGroupEntry<>(this.factory.createMarshalledValue(beans));
-        BeanGroupEntry<I, T> existing = this.invoker.invoke(this.cache, new CreateOperation<>(id, entry));
+        BeanGroupEntry<I, T> existing = this.invoker.invoke(this.cache, new CreateOperation<>(id, entry), Flag.FORCE_SYNCHRONOUS);
         return (existing != null) ? existing : entry;
     }
 

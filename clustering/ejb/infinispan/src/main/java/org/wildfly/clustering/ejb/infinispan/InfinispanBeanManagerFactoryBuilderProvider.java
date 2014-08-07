@@ -28,10 +28,10 @@ import org.wildfly.clustering.ejb.BeanManagerFactoryBuilderProvider;
 /**
  * @author Paul Ferraro
  */
-public class InfinispanBeanManagerFactoryBuilderProvider implements BeanManagerFactoryBuilderProvider {
+public class InfinispanBeanManagerFactoryBuilderProvider implements BeanManagerFactoryBuilderProvider<TransactionBatch> {
 
     @Override
-    public <G, I> BeanManagerFactoryBuilder<G, I> getBeanManagerFactoryBuilder(String name, BeanManagerFactoryBuilderConfiguration config) {
+    public <G, I> BeanManagerFactoryBuilder<G, I, TransactionBatch> getBeanManagerFactoryBuilder(String name, BeanManagerFactoryBuilderConfiguration config) {
         return new InfinispanBeanManagerFactoryBuilder<>(name, config);
     }
 }

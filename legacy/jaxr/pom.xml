@@ -27,7 +27,7 @@
         <groupId>org.wildfly</groupId>
         <artifactId>wildfly-parent</artifactId>
         <relativePath>../../pom.xml</relativePath>
-        <version>8.0.1.Final-SNAPSHOT</version>
+        <version>9.0.0.Alpha1-SNAPSHOT</version>
     </parent>
 
     <artifactId>wildfly-jaxr</artifactId>
@@ -38,7 +38,7 @@
     <dependencies>
 
         <dependency>
-            <groupId>${project.groupId}</groupId>
+            <groupId>org.wildfly.core</groupId>
             <artifactId>wildfly-controller</artifactId>
         </dependency>
 
@@ -72,7 +72,7 @@ projects that depend on this project.-->
         </dependency>
 
         <dependency>
-            <groupId>${project.groupId}</groupId>
+            <groupId>org.wildfly.core</groupId>
             <artifactId>wildfly-subsystem-test</artifactId>
             <type>pom</type>
             <scope>test</scope>

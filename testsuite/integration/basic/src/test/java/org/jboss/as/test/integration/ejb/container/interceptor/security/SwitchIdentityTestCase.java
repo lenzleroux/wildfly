@@ -21,8 +21,21 @@
  */
 package org.jboss.as.test.integration.ejb.container.interceptor.security;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.*;
-import static org.junit.Assert.*;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ALLOW_RESOURCE_SERVICE_RESTART;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.COMPOSITE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PORT;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ROLLBACK_ON_RUNTIME_FAILURE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING_GROUP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.STEPS;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -140,6 +153,7 @@ public class SwitchIdentityTestCase {
         jar.addAsManifestResource(new StringAsset(ClientSecurityInterceptor.class.getName()),
                 "services/org.jboss.ejb.client.EJBClientInterceptor");
         jar.addAsManifestResource(SwitchIdentityTestCase.class.getPackage(), "jboss-ejb-client.xml", "jboss-ejb-client.xml");
+        jar.addAsManifestResource(org.jboss.as.test.integration.ejb.container.interceptor.security.api.ClientSecurityInterceptor.class.getPackage(), "permissions.xml", "permissions.xml");
         jar.addAsManifestResource(Utils.getJBossDeploymentStructure("org.jboss.remoting3", "org.jboss.as.domain-management",
                 "org.jboss.as.controller", "org.jboss.as.core-security"), "jboss-deployment-structure.xml");
         final Properties props = EJBUtil.createEjbClientConfiguration(StringUtils.strip(

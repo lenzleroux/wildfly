@@ -23,6 +23,7 @@
 package org.jboss.as.clustering.jgroups.subsystem;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.ObjectListAttributeDefinition;
 import org.jboss.as.controller.ObjectTypeAttributeDefinition;
 import org.jboss.as.controller.OperationDefinition;
@@ -37,6 +38,8 @@ import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.dmr.ModelType;
 
 /**
@@ -44,77 +47,83 @@ import org.jboss.dmr.ModelType;
  *
  * @author Richard Achmatowicz (c) 2011 Red Hat Inc.
  */
-
 public class ProtocolResourceDefinition extends SimpleResourceDefinition {
 
-    static final PathElement PROTOCOL_PATH = PathElement.pathElement(ModelKeys.PROTOCOL);
-    static final ProtocolResourceDefinition INSTANCE = new ProtocolResourceDefinition();
+    static final PathElement WILDCARD_PATH = pathElement(PathElement.WILDCARD_VALUE);
+
+    static PathElement pathElement(String name) {
+        return PathElement.pathElement(ModelKeys.PROTOCOL, name);
+    }
 
     // attributes
-    static SimpleAttributeDefinition TYPE =
-            new SimpleAttributeDefinitionBuilder(ModelKeys.TYPE, ModelType.STRING, false)
-                    .setXmlName(Attribute.TYPE.getLocalName())
-                    .setAllowExpression(false)
-                    .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-                    .build();
-
-    static SimpleAttributeDefinition SOCKET_BINDING =
-            new SimpleAttributeDefinitionBuilder(ModelKeys.SOCKET_BINDING, ModelType.STRING, true)
-                    .setXmlName(Attribute.SOCKET_BINDING.getLocalName())
-                    .setAllowExpression(false)
-                    .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-                    .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SOCKET_BINDING_REF)
-                    .build();
-
-    static SimpleAttributeDefinition PROPERTY = new SimpleAttributeDefinition(ModelKeys.PROPERTY, ModelType.PROPERTY, true);
-    static SimpleListAttributeDefinition PROPERTIES = new SimpleListAttributeDefinition.Builder(ModelKeys.PROPERTIES, PROPERTY).
-            setAllowNull(true).
-            build();
-
-    static AttributeDefinition[] PROTOCOL_ATTRIBUTES = new AttributeDefinition[] {TYPE, SOCKET_BINDING};
-    static AttributeDefinition[] PROTOCOL_PARAMETERS = new AttributeDefinition[] {TYPE, SOCKET_BINDING, PROPERTIES};
-
-    static final ObjectTypeAttributeDefinition PROTOCOL = ObjectTypeAttributeDefinition.
-                Builder.of(ModelKeys.PROTOCOL, PROTOCOL_ATTRIBUTES).
-                setAllowNull(true).
-                setSuffix(null).
-                setSuffix("protocol").
-                build();
-
-    static final ObjectListAttributeDefinition PROTOCOLS = ObjectListAttributeDefinition.
-            Builder.of(ModelKeys.PROTOCOLS, PROTOCOL).
-            setAllowNull(true).
-            build();
-
-    // operations
-    static final OperationDefinition PROTOCOL_ADD = new SimpleOperationDefinitionBuilder(ModelKeys.ADD_PROTOCOL, JGroupsExtension.getResourceDescriptionResolver("stack"))
-            .setParameters(PROTOCOL_PARAMETERS)
+    static final SimpleAttributeDefinition TYPE = new SimpleAttributeDefinitionBuilder(ModelKeys.TYPE, ModelType.STRING, false)
+            .setXmlName(Attribute.TYPE.getLocalName())
+            .setAllowExpression(false)
+            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .build();
 
-    static final OperationDefinition PROTOCOL_REMOVE = new SimpleOperationDefinitionBuilder(ModelKeys.REMOVE_PROTOCOL, JGroupsExtension.getResourceDescriptionResolver("stack"))
+    static final SimpleAttributeDefinition SOCKET_BINDING = new SimpleAttributeDefinitionBuilder(ModelKeys.SOCKET_BINDING, ModelType.STRING, true)
+            .setXmlName(Attribute.SOCKET_BINDING.getLocalName())
+            .setAllowExpression(false)
+            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SOCKET_BINDING_REF)
+            .build();
+
+    static final SimpleAttributeDefinition PROPERTY = new SimpleAttributeDefinition(ModelKeys.PROPERTY, ModelType.PROPERTY, true);
+    static final SimpleListAttributeDefinition PROPERTIES = new SimpleListAttributeDefinition.Builder(ModelKeys.PROPERTIES, PROPERTY)
+            .setAllowNull(true)
+            .build();
+
+    static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { TYPE, SOCKET_BINDING };
+    static final AttributeDefinition[] PARAMETERS = new AttributeDefinition[] { TYPE, SOCKET_BINDING, PROPERTIES };
+
+    static final ObjectTypeAttributeDefinition PROTOCOL = ObjectTypeAttributeDefinition.Builder.of(ModelKeys.PROTOCOL, ATTRIBUTES)
+            .setAllowNull(true)
+            .setSuffix(null)
+            .setSuffix("protocol")
+            .build();
+
+    static final ObjectListAttributeDefinition PROTOCOLS = ObjectListAttributeDefinition.Builder.of(ModelKeys.PROTOCOLS, PROTOCOL)
+            .setAllowNull(true)
+            .build();
+
+    // operations
+    static final OperationDefinition ADD = new SimpleOperationDefinitionBuilder(ModelKeys.ADD_PROTOCOL, JGroupsExtension.getResourceDescriptionResolver("stack"))
+            .setParameters(PARAMETERS)
+            .build();
+
+    static final OperationDefinition REMOVE = new SimpleOperationDefinitionBuilder(ModelKeys.REMOVE_PROTOCOL, JGroupsExtension.getResourceDescriptionResolver("stack"))
             .setParameters(TYPE)
             .build();
 
-    static final OperationStepHandler PROTOCOL_ADD_HANDLER = new ProtocolLayerAdd(PROTOCOL_PARAMETERS);
-    static final OperationStepHandler PROTOCOL_REMOVE_HANDLER = new ProtocolLayerRemove();
+    static final OperationStepHandler ADD_HANDLER = new ProtocolAddHandler(PARAMETERS);
+    static final OperationStepHandler REMOVE_HANDLER = new ProtocolRemoveHandler();
+
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(WILDCARD_PATH);
+
+        if (JGroupsModel.VERSION_1_2_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder().addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, PROPERTIES);
+        }
+
+        PropertyResourceDefinition.buildTransformation(version, builder);
+    }
 
     // registration
-    private ProtocolResourceDefinition() {
-        super(PROTOCOL_PATH, JGroupsExtension.getResourceDescriptionResolver(ModelKeys.PROTOCOL));
+    ProtocolResourceDefinition() {
+        super(WILDCARD_PATH, JGroupsExtension.getResourceDescriptionResolver(ModelKeys.PROTOCOL));
     }
 
     @Override
-    public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        super.registerAttributes(resourceRegistration);
-        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(PROTOCOL_ATTRIBUTES);
-        for (AttributeDefinition attr : PROTOCOL_ATTRIBUTES) {
-            resourceRegistration.registerReadWriteAttribute(attr, null, writeHandler);
+    public void registerAttributes(ManagementResourceRegistration registration) {
+        final OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(ATTRIBUTES);
+        for (AttributeDefinition attr : ATTRIBUTES) {
+            registration.registerReadWriteAttribute(attr, null, writeHandler);
         }
     }
 
     @Override
-    public void registerChildren(ManagementResourceRegistration resourceRegistration) {
-        super.registerChildren(resourceRegistration);
-        resourceRegistration.registerSubModel(PropertyResourceDefinition.INSTANCE);
+    public void registerChildren(ManagementResourceRegistration registration) {
+        registration.registerSubModel(PropertyResourceDefinition.INSTANCE);
     }
 }

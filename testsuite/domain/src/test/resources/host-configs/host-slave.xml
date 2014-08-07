@@ -20,9 +20,9 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<host xmlns="urn:jboss:domain:2.0"
+<host xmlns="urn:jboss:domain:3.0"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="urn:jboss:domain:2.0 jboss-as-config_2_0.xsd"
+      xsi:schemaLocation="urn:jboss:domain:3.0 wildfly-config_3_0.xsd"
       name="slave">
 
     <paths>
@@ -36,13 +36,13 @@
                      <secret value="c2xhdmVfdXMzcl9wYXNzd29yZA==" />
                 </server-identities>
                 <authentication>
-                     <local default-user="$local" />
+                     <local default-user="$local" skip-group-loading="true" />
                      <properties path="mgmt-users.properties" relative-to="jboss.domain.config.dir" />
                 </authentication>
             </security-realm>
             <security-realm name="ApplicationRealm">
                 <authentication>
-                    <local default-user="$local" allowed-users="*" />
+                    <local default-user="$local" allowed-users="*" skip-group-loading="true" />
                     <properties path="domain/configuration/application-users.properties" relative-to="jboss.home.dir" />
                 </authentication>
             </security-realm>

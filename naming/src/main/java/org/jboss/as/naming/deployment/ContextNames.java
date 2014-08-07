@@ -22,19 +22,20 @@
 
 package org.jboss.as.naming.deployment;
 
-import javax.naming.NamingException;
-
 import org.jboss.as.naming.ImmediateManagedReference;
 import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.naming.ManagedReferenceFactory;
 import org.jboss.as.naming.NamingContext;
 import org.jboss.as.naming.NamingStore;
+import org.jboss.as.naming.context.external.ExternalContexts;
+import org.jboss.as.server.deployment.DeploymentUnit;
+import org.jboss.as.naming.logging.NamingLogger;
 import org.jboss.msc.inject.InjectionException;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceName;
 
-import static org.jboss.as.naming.NamingMessages.MESSAGES;
+import javax.naming.NamingException;
 
 /**
  * @author John Bailey
@@ -275,15 +276,21 @@ public class ContextNames {
         }
 
         /**
-         * Setup a lookup with respect to {@link Resource} injection.
+         * Setup a lookup with respect to {@link javax.annotation.Resource} injection.
          *
          * @param serviceBuilder the builder that should depend on the lookup
          * @param targetInjector the injector which will receive the lookup result once the builded service starts
          */
         public void setupLookupInjection(final ServiceBuilder<?> serviceBuilder,
-                final Injector<ManagedReferenceFactory> targetInjector) {
-            // set dependency to the binder msc service
-            serviceBuilder.addDependency(getBinderServiceName());
+                final Injector<ManagedReferenceFactory> targetInjector, final DeploymentUnit deploymentUnit, final boolean optional) {
+
+            // set dependency to the binder or its parent external context's service name
+            final ExternalContexts externalContexts = deploymentUnit.getAttachment(Attachments.EXTERNAL_CONTEXTS);
+            final ServiceName parentExternalContextServiceName = externalContexts != null ? externalContexts.getParentExternalContext(getBinderServiceName()) : null;
+            final ServiceName dependencyServiceName = parentExternalContextServiceName == null ? getBinderServiceName() : parentExternalContextServiceName;
+            final ServiceBuilder.DependencyType dependencyType = optional ? ServiceBuilder.DependencyType.OPTIONAL : ServiceBuilder.DependencyType.REQUIRED;
+            serviceBuilder.addDependency(dependencyType, dependencyServiceName);
+
             // an injector which upon being injected with the naming store, injects a factory - which does the lookup - to the
             // target injector
             final Injector<NamingStore> lookupInjector = new Injector<NamingStore>() {
@@ -297,13 +304,16 @@ public class ContextNames {
                     final ManagedReferenceFactory factory = new ManagedReferenceFactory() {
                         @Override
                         public ManagedReference getReference() {
-                            Object bindValue = null;
                             try {
-                                bindValue = storeBaseContext.lookup(getBindName());
+                                return new ImmediateManagedReference(storeBaseContext.lookup(getBindName()));
                             } catch (NamingException e) {
-                                throw MESSAGES.resourceLookupForInjectionFailed(getAbsoluteJndiName(),e);
+                                if(!optional) {
+                                    throw NamingLogger.ROOT_LOGGER.resourceLookupForInjectionFailed(getAbsoluteJndiName(), e);
+                                } else {
+                                    NamingLogger.ROOT_LOGGER.tracef(e,"failed to lookup %s", getAbsoluteJndiName());
+                                }
                             }
-                            return new ImmediateManagedReference(bindValue);
+                            return null;
                         }
                     };
                     targetInjector.inject(factory);
@@ -345,7 +355,7 @@ public class ContextNames {
             parentContextName = JAVA_CONTEXT_SERVICE_NAME;
             bindName = bindName.substring(1);
         } else {
-            throw MESSAGES.illegalContextInName(jndiName);
+            throw NamingLogger.ROOT_LOGGER.illegalContextInName(jndiName);
         }
         return new BindInfo(parentContextName, bindName);
     }

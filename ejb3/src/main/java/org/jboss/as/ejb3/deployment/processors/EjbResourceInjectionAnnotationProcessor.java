@@ -22,12 +22,6 @@
 
 package org.jboss.as.ejb3.deployment.processors;
 
-import java.util.List;
-import java.util.Locale;
-
-import javax.ejb.EJB;
-import javax.ejb.EJBs;
-
 import org.jboss.as.ee.component.Attachments;
 import org.jboss.as.ee.component.BindingConfiguration;
 import org.jboss.as.ee.component.EEModuleClassDescription;
@@ -37,10 +31,10 @@ import org.jboss.as.ee.component.InjectionSource;
 import org.jboss.as.ee.component.InjectionTarget;
 import org.jboss.as.ee.component.LookupInjectionSource;
 import org.jboss.as.ee.component.MethodInjectionTarget;
-import org.jboss.as.ee.component.OptionalLookupInjectionSource;
 import org.jboss.as.ee.component.ResourceInjectionConfiguration;
+import org.jboss.as.ee.structure.EJBAnnotationPropertyReplacement;
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.deployment.EjbDeploymentAttachmentKeys;
-import org.jboss.as.ejb3.util.PropertiesValueResolver;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
@@ -54,8 +48,12 @@ import org.jboss.jandex.DotName;
 import org.jboss.jandex.FieldInfo;
 import org.jboss.jandex.MethodInfo;
 import org.jboss.logging.Logger;
+import org.jboss.metadata.property.PropertyReplacer;
 
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+import javax.ejb.EJB;
+import javax.ejb.EJBs;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * Deployment processor responsible for processing @EJB annotations within components.  Each @EJB annotation will be registered
@@ -84,11 +82,11 @@ public class EjbResourceInjectionAnnotationProcessor implements DeploymentUnitPr
         final CompositeIndex index = deploymentUnit.getAttachment(org.jboss.as.server.deployment.Attachments.COMPOSITE_ANNOTATION_INDEX);
         final List<AnnotationInstance> resourceAnnotations = index.getAnnotations(EJB_ANNOTATION_NAME);
 
-        final Boolean replacement = deploymentUnit.getAttachment(org.jboss.as.ee.structure.Attachments.ANNOTATION_PROPERTY_REPLACEMENT);
+        PropertyReplacer propertyReplacer = EJBAnnotationPropertyReplacement.propertyReplacer(deploymentUnit);
 
         for (AnnotationInstance annotation : resourceAnnotations) {
             final AnnotationTarget annotationTarget = annotation.target();
-            final EJBResourceWrapper annotationWrapper = new EJBResourceWrapper(annotation, replacement);
+            final EJBResourceWrapper annotationWrapper = new EJBResourceWrapper(annotation, propertyReplacer);
             if (annotationTarget instanceof FieldInfo) {
                 processField(deploymentUnit, annotationWrapper, (FieldInfo) annotationTarget, moduleDescription);
             } else if (annotationTarget instanceof MethodInfo) {
@@ -104,11 +102,11 @@ public class EjbResourceInjectionAnnotationProcessor implements DeploymentUnitPr
                 final AnnotationValue annotationValue = annotation.value();
                 final AnnotationInstance[] ejbAnnotations = annotationValue.asNestedArray();
                 for (AnnotationInstance ejbAnnotation : ejbAnnotations) {
-                    final EJBResourceWrapper annotationWrapper = new EJBResourceWrapper(ejbAnnotation, replacement);
+                    final EJBResourceWrapper annotationWrapper = new EJBResourceWrapper(ejbAnnotation, propertyReplacer);
                     processClass(deploymentUnit, annotationWrapper, (ClassInfo) annotationTarget, moduleDescription);
                 }
             } else {
-                throw MESSAGES.annotationOnlyAllowedOnClass(EJBs.class.getName(), annotation.target());
+                throw EjbLogger.ROOT_LOGGER.annotationOnlyAllowedOnClass(EJBs.class.getName(), annotation.target());
             }
         }
     }
@@ -128,7 +126,7 @@ public class EjbResourceInjectionAnnotationProcessor implements DeploymentUnitPr
     private void processMethod(final DeploymentUnit deploymentUnit, final EJBResourceWrapper annotation, final MethodInfo methodInfo, final EEModuleDescription eeModuleDescription) {
         final String methodName = methodInfo.name();
         if (!methodName.startsWith("set") || methodInfo.args().length != 1) {
-            throw MESSAGES.onlySetterMethodsAllowedToHaveEJBAnnotation(methodInfo);
+            throw EjbLogger.ROOT_LOGGER.onlySetterMethodsAllowedToHaveEJBAnnotation(methodInfo);
         }
         final String methodParamType = methodInfo.args()[0].name().toString();
         final InjectionTarget targetDescription = new MethodInjectionTarget(methodInfo.declaringClass().name().toString(), methodName, methodParamType);
@@ -140,10 +138,10 @@ public class EjbResourceInjectionAnnotationProcessor implements DeploymentUnitPr
 
     private void processClass(final DeploymentUnit deploymentUnit, final EJBResourceWrapper annotation, final ClassInfo classInfo, final EEModuleDescription eeModuleDescription) throws DeploymentUnitProcessingException {
         if (isEmpty(annotation.name())) {
-            throw MESSAGES.nameAttributeRequiredForEJBAnnotationOnClass(classInfo.toString());
+            throw EjbLogger.ROOT_LOGGER.nameAttributeRequiredForEJBAnnotationOnClass(classInfo.toString());
         }
         if (isEmpty(annotation.beanInterface())) {
-            throw MESSAGES.beanInterfaceAttributeRequiredForEJBAnnotationOnClass(classInfo.toString());
+            throw EjbLogger.ROOT_LOGGER.beanInterfaceAttributeRequiredForEJBAnnotationOnClass(classInfo.toString());
         }
         process(deploymentUnit, annotation.beanInterface(), annotation.beanName(), annotation.lookup(), classInfo, null, annotation.name(), eeModuleDescription);
     }
@@ -190,11 +188,7 @@ public class EjbResourceInjectionAnnotationProcessor implements DeploymentUnitPr
     private InjectionSource createLookup(final String localContextName, final boolean appclient) {
         //appclient lookups are always optional
         //as they could reference local interfaces that are not present
-        if(appclient) {
-            return new OptionalLookupInjectionSource(localContextName);
-        } else {
-            return new LookupInjectionSource(localContextName);
-        }
+        return new LookupInjectionSource(localContextName, appclient);
     }
 
     private boolean isEmpty(final String string) {
@@ -207,10 +201,10 @@ public class EjbResourceInjectionAnnotationProcessor implements DeploymentUnitPr
         private final String beanName;
         private final String lookup;
         private final String description;
-        private final boolean replacement;
+        private final PropertyReplacer propertyReplacer;
 
-        private EJBResourceWrapper(final AnnotationInstance annotation, final boolean replacement) {
-            this.replacement = replacement;
+        public EJBResourceWrapper(AnnotationInstance annotation, PropertyReplacer propertyReplacer) {
+            this.propertyReplacer = propertyReplacer;
             name = stringValueOrNull(annotation, "name");
             beanInterface = classValueOrNull(annotation, "beanInterface");
             beanName = stringValueOrNull(annotation, "beanName");
@@ -245,12 +239,12 @@ public class EjbResourceInjectionAnnotationProcessor implements DeploymentUnitPr
 
         private String stringValueOrNull(final AnnotationInstance annotation, final String attribute) {
             final AnnotationValue value = annotation.value(attribute);
-            return value != null ? (replacement ? PropertiesValueResolver.replaceProperties(value.asString()) : value.asString()) : null;
+            return (value != null) ? propertyReplacer.replaceProperties(value.asString()) : null;
         }
 
         private String classValueOrNull(final AnnotationInstance annotation, final String attribute) {
             final AnnotationValue value = annotation.value(attribute);
-            return value != null ? value.asClass().name().toString() : null;
+            return (value != null) ? value.asClass().name().toString() : null;
         }
     }
 }

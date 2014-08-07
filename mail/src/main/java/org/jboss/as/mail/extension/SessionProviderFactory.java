@@ -24,14 +24,13 @@
 
 package org.jboss.as.mail.extension;
 
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
 import java.util.Map;
 import java.util.Properties;
 import javax.mail.Authenticator;
 import javax.mail.PasswordAuthentication;
 import javax.mail.Session;
+import org.jboss.as.network.NetworkUtils;
 
 import org.jboss.as.network.OutboundSocketBinding;
 import org.jboss.metadata.javaee.spec.MailSessionMetaData;
@@ -76,7 +75,6 @@ class SessionProviderFactory {
         /**
          * Configures mail session properties
          *
-         * @return Properties for session
          * @throws org.jboss.msc.service.StartException
          *          if socket binding could not be found
          * @see {http://javamail.kenai.com/nonav/javadocs/com/sun/mail/smtp/package-summary.html}
@@ -128,7 +126,7 @@ class SessionProviderFactory {
             Map<String, String> customProps = server.getProperties();
             if (server.getOutgoingSocketBinding() != null) {
                 InetSocketAddress socketAddress = getServerSocketAddress(server);
-                props.setProperty(getHostKey(protocol), socketAddress.getAddress().getHostName());
+                props.setProperty(getHostKey(protocol), NetworkUtils.canonize(socketAddress.getAddress().getHostName()));
                 props.setProperty(getPortKey(protocol), String.valueOf(socketAddress.getPort()));
             } else {
                 String host = customProps.get("host");
@@ -156,16 +154,10 @@ class SessionProviderFactory {
         private InetSocketAddress getServerSocketAddress(ServerConfig server) throws StartException {
             final String ref = server.getOutgoingSocketBinding();
             final OutboundSocketBinding binding = socketBindings.get(ref);
-            if (ref == null) {
-                throw MailMessages.MESSAGES.outboundSocketBindingNotAvailable(ref);
+            if (binding == null) {
+                throw MailLogger.ROOT_LOGGER.outboundSocketBindingNotAvailable(ref);
             }
-            final InetAddress destinationAddress;
-            try {
-                destinationAddress = binding.getResolvedDestinationAddress();
-            } catch (UnknownHostException uhe) {
-                throw MailMessages.MESSAGES.unknownOutboundSocketBindingDestination(uhe, ref);
-            }
-            return new InetSocketAddress(destinationAddress, binding.getDestinationPort());
+            return new InetSocketAddress(binding.getUnresolvedDestinationAddress(), binding.getDestinationPort());
         }
 
         @Override

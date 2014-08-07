@@ -24,7 +24,7 @@ package org.jboss.as.test.integration.domain.mixed.util;
 import java.io.File;
 
 import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
-import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfiguration;
+import org.jboss.as.test.integration.domain.management.util.WildFlyManagedConfiguration;
 import org.jboss.as.test.integration.domain.mixed.Version;
 
 
@@ -36,15 +36,14 @@ public class MixedDomainTestSupport extends DomainTestSupport {
 
     public MixedDomainTestSupport(String testClass, String domainConfig, String masterConfig, String slaveConfig, String jbossHome)
             throws Exception {
-        super(testClass, domainConfig, masterConfig, slaveConfig, new JBossAsManagedConfiguration(), new JBossAsManagedConfiguration(jbossHome));
+        super(testClass, domainConfig, masterConfig, slaveConfig, new WildFlyManagedConfiguration(), new WildFlyManagedConfiguration(jbossHome));
     }
 
 
     public static MixedDomainTestSupport create(String testClass, Version.AsVersion version) throws Exception {
-        OldVersionCopier oldVersionCopier = OldVersionCopier.expandOldVersion(version);
-        File dir = oldVersionCopier.getVersionDir(version);
+        File dir = OldVersionCopier.expandOldVersion(version);
 
         return new MixedDomainTestSupport(testClass, "master-config/domain.xml", "master-config/host.xml",
-                "slave-configs/" + dir.getName() + "/domain/configuration/host-slave.xml", dir.getAbsolutePath());
+                "slave-configs/" + version.getFullVersionName() + "/domain/configuration/host-slave.xml", dir.getAbsolutePath());
     }
 }

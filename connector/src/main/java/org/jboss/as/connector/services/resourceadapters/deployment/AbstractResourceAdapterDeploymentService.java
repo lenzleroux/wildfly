@@ -25,7 +25,6 @@ package org.jboss.as.connector.services.resourceadapters.deployment;
 import static java.lang.Thread.currentThread;
 import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.connector.logging.ConnectorLogger.DEPLOYMENT_CONNECTOR_LOGGER;
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 
 import java.io.File;
 import java.io.PrintWriter;
@@ -40,6 +39,7 @@ import javax.naming.Reference;
 import javax.resource.spi.ResourceAdapter;
 import javax.transaction.TransactionManager;
 
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.metadata.deployment.ResourceAdapterDeployment;
 import org.jboss.as.connector.services.mdr.AS7MetadataRepository;
 import org.jboss.as.connector.services.resourceadapters.AdminObjectReferenceFactoryService;
@@ -56,10 +56,10 @@ import org.jboss.as.naming.ServiceBasedNamingStore;
 import org.jboss.as.naming.WritableServiceBasedNamingStore;
 import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.as.naming.service.BinderService;
-import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
-import org.jboss.jca.common.api.metadata.ra.ConfigProperty;
-import org.jboss.jca.common.api.metadata.ra.Connector;
-import org.jboss.jca.common.api.metadata.ra.XsdString;
+import org.jboss.jca.common.api.metadata.resourceadapter.Activation;
+import org.jboss.jca.common.api.metadata.spec.ConfigProperty;
+import org.jboss.jca.common.api.metadata.spec.Connector;
+import org.jboss.jca.common.api.metadata.spec.XsdString;
 import org.jboss.jca.core.api.connectionmanager.ccm.CachedConnectionManager;
 import org.jboss.jca.core.api.management.ManagementRepository;
 import org.jboss.jca.core.connectionmanager.ConnectionManager;
@@ -83,10 +83,10 @@ import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.security.SubjectFactory;
 import org.jboss.threads.JBossThreadFactory;
+import org.wildfly.security.manager.WildFlySecurityManager;
 import org.wildfly.security.manager.action.ClearContextClassLoaderAction;
 import org.wildfly.security.manager.action.GetAccessControlContextAction;
 import org.wildfly.security.manager.action.SetContextClassLoaderFromClassAction;
-import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A ResourceAdapterDeploymentService.
@@ -169,7 +169,13 @@ public abstract class AbstractResourceAdapterDeploymentService {
                 if (rr != null) {
                     for (XAResourceRecovery recovery : value.getDeployment().getRecovery()) {
                         if (recovery!= null) {
-                            rr.removeXAResourceRecovery(recovery);
+                            try {
+                                recovery.shutdown();
+                            } catch (Exception e) {
+                                DEPLOYMENT_CONNECTOR_LOGGER.error("Error during recovery shutdown", e);
+                            } finally {
+                                rr.removeXAResourceRecovery(recovery);
+                            }
                         }
                     }
                 }
@@ -300,7 +306,7 @@ public abstract class AbstractResourceAdapterDeploymentService {
                     unregisterAll(deploymentName);
                 } finally {
                     WritableServiceBasedNamingStore.popOwner();
-                    context.failed(MESSAGES.failedToStartRaDeployment(cause, deploymentName));
+                    context.failed(ConnectorLogger.ROOT_LOGGER.failedToStartRaDeployment(cause, deploymentName));
                 }
             }
         };
@@ -363,7 +369,7 @@ public abstract class AbstractResourceAdapterDeploymentService {
 
         @Override
         public String[] bindConnectionFactory(URL url, String deployment, Object cf) throws Throwable {
-            throw MESSAGES.jndiBindingsNotSupported();
+            throw ConnectorLogger.ROOT_LOGGER.jndiBindingsNotSupported();
         }
 
         @Override
@@ -434,7 +440,7 @@ public abstract class AbstractResourceAdapterDeploymentService {
 
         @Override
         public String[] bindAdminObject(URL url, String deployment, Object ao) throws Throwable {
-            throw MESSAGES.jndiBindingsNotSupported();
+            throw ConnectorLogger.ROOT_LOGGER.jndiBindingsNotSupported();
         }
 
         @Override
@@ -497,7 +503,7 @@ public abstract class AbstractResourceAdapterDeploymentService {
         }
 
         @Override
-        protected abstract boolean checkActivation(Connector cmd, IronJacamar ijmd);
+        protected abstract boolean checkActivation(Connector cmd, Activation activation);
 
         @Override
         protected boolean checkConfigurationIsValid() {
@@ -564,12 +570,12 @@ public abstract class AbstractResourceAdapterDeploymentService {
 
                 return o;
             } catch (Throwable t) {
-                throw MESSAGES.deploymentFailed(t, className);
+                throw ConnectorLogger.ROOT_LOGGER.deploymentFailed(t, className);
             }
         }
 
         @Override
-        protected void registerResourceAdapterToMDR(URL url, File file, Connector connector, IronJacamar ij)
+        protected void registerResourceAdapterToMDR(URL url, File file, Connector connector, Activation ij)
                 throws AlreadyExistsException {
             DEPLOYMENT_CONNECTOR_LOGGER.debugf("Registering ResourceAdapter %s", deploymentName);
             mdr.getValue().registerResourceAdapter(deploymentName, file, connector, ij);

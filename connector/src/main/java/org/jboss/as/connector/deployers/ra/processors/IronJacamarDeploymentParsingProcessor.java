@@ -22,12 +22,11 @@
 
 package org.jboss.as.connector.deployers.ra.processors;
 
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
-
 import java.io.InputStream;
 import java.util.Locale;
 
 import org.jboss.as.connector.deployers.Util;
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.metadata.xmldescriptors.IronJacamarXmlDescriptor;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
@@ -35,8 +34,8 @@ import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.module.ResourceRoot;
-import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
-import org.jboss.jca.common.metadata.ironjacamar.v11.IronJacamarParser;
+import org.jboss.jca.common.api.metadata.resourceadapter.Activation;
+import org.jboss.jca.common.metadata.ironjacamar.IronJacamarParser;
 import org.jboss.vfs.VFSUtils;
 import org.jboss.vfs.VirtualFile;
 
@@ -89,7 +88,7 @@ public class IronJacamarDeploymentParsingProcessor implements DeploymentUnitProc
             return null;
 
         InputStream xmlStream = null;
-        IronJacamar result = null;
+        Activation result = null;
         try {
             xmlStream = serviceXmlFile.openStream();
             IronJacamarParser ironJacamarParser = new IronJacamarParser();
@@ -99,9 +98,9 @@ public class IronJacamarDeploymentParsingProcessor implements DeploymentUnitProc
                 xmlDescriptor = new IronJacamarXmlDescriptor(result);
 
             } else
-                throw MESSAGES.failedToParseServiceXml(serviceXmlFile);
+                throw ConnectorLogger.ROOT_LOGGER.failedToParseServiceXml(serviceXmlFile);
         } catch (Exception e) {
-            throw MESSAGES.failedToParseServiceXml(e, serviceXmlFile);
+            throw ConnectorLogger.ROOT_LOGGER.failedToParseServiceXml(e, serviceXmlFile);
         } finally {
             VFSUtils.safeClose(xmlStream);
         }

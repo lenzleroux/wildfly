@@ -33,7 +33,7 @@ import org.wildfly.clustering.ejb.Time;
 import org.wildfly.clustering.ejb.infinispan.BeanEntry;
 import org.wildfly.clustering.ejb.infinispan.BeanGroup;
 import org.wildfly.clustering.ejb.infinispan.BeanRemover;
-import org.wildfly.clustering.ejb.infinispan.InfinispanEjbLogger;
+import org.wildfly.clustering.ejb.infinispan.logging.InfinispanEjbLogger;
 
 /**
  * A {@link Bean} implementation backed by an infinispan cache.
@@ -80,7 +80,7 @@ public class InfinispanBean<G, I, T> implements Bean<G, I, T> {
         if (this.timeout == null) return false;
         Date lastAccessedTime = this.entry.getLastAccessedTime();
         long timeout = this.timeout.convert(TimeUnit.MILLISECONDS);
-        return (lastAccessedTime != null) && (timeout > 0) ? ((System.currentTimeMillis() - lastAccessedTime.getTime()) > timeout) : false;
+        return (lastAccessedTime != null) && (timeout > 0) ? ((System.currentTimeMillis() - lastAccessedTime.getTime()) >= timeout) : false;
     }
 
     @Override

@@ -22,13 +22,16 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<module xmlns="urn:jboss:module:1.1" name="org.jboss.ironjacamar.impl">
+<module xmlns="urn:jboss:module:1.3" name="org.jboss.ironjacamar.impl">
     <properties>
         <property name="jboss.api" value="private"/>
     </properties>
 
     <resources>
-        <!-- Insert resources here -->
+        <artifact name="${org.jboss.ironjacamar:ironjacamar-common-impl}"/>
+        <artifact name="${org.jboss.ironjacamar:ironjacamar-core-impl}"/>
+        <artifact name="${org.jboss.ironjacamar:ironjacamar-deployers-common}"/>
+        <artifact name="${org.jboss.ironjacamar:ironjacamar-validator}"/>
     </resources>
 
     <dependencies>

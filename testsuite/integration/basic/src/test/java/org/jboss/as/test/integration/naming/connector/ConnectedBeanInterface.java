@@ -23,16 +23,18 @@
 package org.jboss.as.test.integration.naming.connector;
 
 import javax.ejb.Remote;
+import javax.management.remote.JMXServiceURL;
 
 
 /**
  * @author baranowb
+ * @author Eduardo Martins
  *
  */
 @Remote
 public interface ConnectedBeanInterface {
 
-    public void testConnector(String jmxURI) throws Exception;
+    public int getMBeanCountFromConnector(JMXServiceURL jmxServiceURL) throws Exception;
 
-    public boolean testDirectLookup(String jmxURI) throws Exception;
+    public int getMBeanCountFromJNDI(String rmiServerJndiName) throws Exception;
 }

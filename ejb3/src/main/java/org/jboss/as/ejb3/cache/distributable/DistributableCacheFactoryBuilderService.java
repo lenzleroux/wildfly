@@ -26,6 +26,7 @@ import java.util.UUID;
 
 import org.jboss.as.ejb3.cache.CacheFactory;
 import org.jboss.as.ejb3.cache.CacheFactoryBuilderService;
+import org.jboss.as.ejb3.cache.Contextual;
 import org.jboss.as.ejb3.cache.Identifiable;
 import org.jboss.as.ejb3.component.stateful.StatefulTimeoutInfo;
 import org.jboss.msc.service.AbstractService;
@@ -33,6 +34,7 @@ import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
+import org.wildfly.clustering.ejb.Batch;
 import org.wildfly.clustering.ejb.BeanContext;
 import org.wildfly.clustering.ejb.BeanManagerFactoryBuilder;
 import org.wildfly.clustering.ejb.BeanManagerFactoryBuilderConfiguration;
@@ -44,28 +46,28 @@ import org.wildfly.clustering.ejb.BeanManagerFactoryBuilderProvider;
  * @param <K> the cache key type
  * @param <V> the cache value type
  */
-public class DistributableCacheFactoryBuilderService<K, V extends Identifiable<K>> extends AbstractService<DistributableCacheFactoryBuilder<K, V>> implements DistributableCacheFactoryBuilder<K, V> {
+public class DistributableCacheFactoryBuilderService<K, V extends Identifiable<K> & Contextual<Batch>> extends AbstractService<DistributableCacheFactoryBuilder<K, V>> implements DistributableCacheFactoryBuilder<K, V> {
 
     public static ServiceName getServiceName(String name) {
         return CacheFactoryBuilderService.BASE_CACHE_FACTORY_SERVICE_NAME.append("distributable", name);
     }
 
     private final String name;
-    private final BeanManagerFactoryBuilder<UUID, K> builder;
+    private final BeanManagerFactoryBuilder<UUID, K, Batch> builder;
     private final BeanManagerFactoryBuilderConfiguration config;
 
     public DistributableCacheFactoryBuilderService(String name, BeanManagerFactoryBuilderConfiguration config) {
         this(name, load(), config);
     }
 
-    private static BeanManagerFactoryBuilderProvider load() {
-        for (BeanManagerFactoryBuilderProvider provider: ServiceLoader.load(BeanManagerFactoryBuilderProvider.class, BeanManagerFactoryBuilderProvider.class.getClassLoader())) {
+    private static BeanManagerFactoryBuilderProvider<Batch> load() {
+        for (BeanManagerFactoryBuilderProvider<Batch> provider: ServiceLoader.load(BeanManagerFactoryBuilderProvider.class, BeanManagerFactoryBuilderProvider.class.getClassLoader())) {
             return provider;
         }
         return null;
     }
 
-    public DistributableCacheFactoryBuilderService(String name, BeanManagerFactoryBuilderProvider provider, BeanManagerFactoryBuilderConfiguration config) {
+    public DistributableCacheFactoryBuilderService(String name, BeanManagerFactoryBuilderProvider<Batch> provider, BeanManagerFactoryBuilderConfiguration config) {
         this.name = name;
         this.config = config;
         this.builder = provider.<UUID, K>getBeanManagerFactoryBuilder(name, config);

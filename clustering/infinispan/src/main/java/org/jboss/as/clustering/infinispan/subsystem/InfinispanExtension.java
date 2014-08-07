@@ -21,18 +21,16 @@
  */
 package org.jboss.as.clustering.infinispan.subsystem;
 
-import java.util.List;
+import java.util.EnumSet;
 
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
-import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.SubsystemRegistration;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.services.path.ResolvePathHandler;
-import org.jboss.dmr.ModelNode;
-import org.jboss.staxmapper.XMLElementReader;
+import org.jboss.as.controller.transform.description.TransformationDescription;
 
 /**
  * Defines the Infinispan subsystem and its addressable resources.
@@ -43,12 +41,8 @@ import org.jboss.staxmapper.XMLElementReader;
 public class InfinispanExtension implements Extension {
 
     public static final String SUBSYSTEM_NAME = "infinispan";
-    static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, SUBSYSTEM_NAME);
-    public static final String RESOURCE_NAME = InfinispanExtension.class.getPackage().getName() + ".LocalDescriptions";
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
-    private static final int MANAGEMENT_API_MICRO_VERSION = 0;
+    private static final String RESOURCE_NAME = InfinispanExtension.class.getPackage().getName() + ".LocalDescriptions";
 
     static ResourceDescriptionResolver getResourceDescriptionResolver(final String... keyPrefix) {
         StringBuilder prefix = new StringBuilder(SUBSYSTEM_NAME);
@@ -64,26 +58,29 @@ public class InfinispanExtension implements Extension {
      */
     @Override
     public void initialize(ExtensionContext context) {
-        // IMPORTANT: Management API version != xsd version! Not all Management API changes result in XSD changes
-        SubsystemRegistration subsystem = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION,
-                MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
+        ModelVersion current = InfinispanModel.CURRENT.getVersion();
+        SubsystemRegistration registration = context.registerSubsystem(SUBSYSTEM_NAME, current.getMajor(), current.getMinor(), current.getMicro());
+
         // Create the path resolver handler
         final ResolvePathHandler resolvePathHandler;
         if (context.getProcessType().isServer()) {
             resolvePathHandler = ResolvePathHandler.Builder.of(context.getPathManager())
-                    .setPathAttribute(FileStoreResourceDefinition.PATH)
+                    .setPathAttribute(FileStoreResourceDefinition.RELATIVE_PATH)
                     .setRelativeToAttribute(FileStoreResourceDefinition.RELATIVE_TO)
                     .build();
         } else {
             resolvePathHandler = null;
         }
 
-        subsystem.registerSubsystemModel(new InfinispanSubsystemRootResourceDefinition(resolvePathHandler, context.isRuntimeOnlyRegistrationValid()));
-        subsystem.registerXMLElementWriter(new InfinispanSubsystemXMLWriter());
+        registration.registerSubsystemModel(new InfinispanSubsystemResourceDefinition(resolvePathHandler, context.isRuntimeOnlyRegistrationValid()));
+        registration.registerXMLElementWriter(new InfinispanSubsystemXMLWriter());
+
         if (context.isRegisterTransformers()) {
-            // TODO move transformation out of this utility class and into the ResourceDefinition impls
-            // to keep the transformation more closely related to the management API
-            InfinispanTransformers.registerTransformers(subsystem);
+            // Register transformers for all but the current model
+            for (InfinispanModel model: EnumSet.complementOf(EnumSet.of(InfinispanModel.CURRENT))) {
+                ModelVersion version = model.getVersion();
+                TransformationDescription.Tools.register(InfinispanSubsystemResourceDefinition.buildTransformation(version), registration, version);
+            }
         }
     }
 
@@ -93,11 +90,8 @@ public class InfinispanExtension implements Extension {
      */
     @Override
     public void initializeParsers(ExtensionParsingContext context) {
-        for (Namespace namespace: Namespace.values()) {
-            XMLElementReader<List<ModelNode>> reader = namespace.getXMLReader();
-            if (reader != null) {
-                context.setSubsystemXmlMapping(SUBSYSTEM_NAME, namespace.getUri(), reader);
-            }
+        for (InfinispanSchema schema: InfinispanSchema.values()) {
+            context.setSubsystemXmlMapping(SUBSYSTEM_NAME, schema.getNamespaceUri(), new InfinispanSubsystemXMLReader(schema));
         }
     }
 }

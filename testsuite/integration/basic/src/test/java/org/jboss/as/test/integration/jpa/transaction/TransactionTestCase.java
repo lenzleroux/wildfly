@@ -57,12 +57,14 @@ public class TransactionTestCase {
         JavaArchive jar = ShrinkWrap.create(JavaArchive.class, ARCHIVE_NAME + ".jar");
         jar.addClasses(TransactionTestCase.class,
             Employee.class,
+            Company.class,
             SFSB1.class,
             SFSBXPC.class,
             SFSBCMT.class,
             SLSB1.class,
             UnsynchronizedSFSB.class,
-            InnerUnsynchronizedSFSB.class
+            InnerUnsynchronizedSFSB.class,
+            UnsynchronizedSFSBXPC.class
         );
         jar.addAsManifestResource(TransactionTestCase.class.getPackage(), "persistence.xml","persistence.xml");
         return jar;
@@ -232,10 +234,35 @@ public class TransactionTestCase {
                         employee);
 
         unsynchronizedSFSB.createAndPropagatedJoin("Jon Snow","knows nothing",56);
-        unsynchronizedSFSB.find(56);
+        employee = unsynchronizedSFSB.find(56);
         assertNotNull("SynchronizationType.UNSYNCHRONIZED should be propagated across bean invocations as per JPA 2.1 section 7.6.4 and " +
                 "pending changes saved when inner bean calls EntityManager.joinTransaction",
                                 employee);
     }
+
+
+    @Test
+    @InSequence(9)
+    public void testUnsynchronizedXPC() throws Exception {
+        UnsynchronizedSFSBXPC unsynchronizedSFSBXPC = lookup("UnsynchronizedSFSBXPC", UnsynchronizedSFSBXPC.class);
+        SFSB1 sfsb1 = lookup("SFSB1", SFSB1.class);
+
+        // create entity in UNSYNCHRONIZED persistence context which shouldn't be stored in the database until after em.joinTransaction()
+        Employee employee = unsynchronizedSFSBXPC.createAndFind("Tom Jones","Singer", 500);
+        assertNotNull("SynchronizationType.UNSYNCHRONIZED should be visible in the same extended persistence context within same tx",employee);    // we should see new employee in unsynchronized persistence context
+
+        employee = sfsb1.getEmployeeNoTX(500);
+        assertNull("entity created in SynchronizationType.UNSYNCHRONIZED XPC should not of been saved to database", employee);       // same extended persistence context
+
+    }
+
+    @Test
+    @InSequence(10)
+    public void testQueryNonTXTransactionalDetachIsDeferred() throws Exception {
+        SFSB1 sfsb1 = lookup("SFSB1", SFSB1.class);
+        sfsb1.createEmployee("Mad", "368 Mad Country Lane", 204);
+        assertTrue("expecting that lazily fetched association is still attached, so that we can verify its lazy fetched collection size of one", sfsb1.isLazyAssociationAccessibleWithDeferredDetach(204));
+    }
+
 
 }

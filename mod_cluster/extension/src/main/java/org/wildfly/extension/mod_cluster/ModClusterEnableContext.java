@@ -33,7 +33,6 @@ import org.jboss.modcluster.ModClusterServiceMBean;
 import org.jboss.msc.service.ServiceController;
 
 import static org.wildfly.extension.mod_cluster.ModClusterLogger.ROOT_LOGGER;
-import static org.wildfly.extension.mod_cluster.ModClusterMessages.MESSAGES;
 
 public class ModClusterEnableContext implements OperationStepHandler {
 
@@ -41,8 +40,8 @@ public class ModClusterEnableContext implements OperationStepHandler {
 
     static OperationDefinition getDefinition(ResourceDescriptionResolver descriptionResolver) {
         return new SimpleOperationDefinitionBuilder(CommonAttributes.ENABLE_CONTEXT, descriptionResolver)
-                .addParameter(ModClusterDefinition.VIRTUAL_HOST)
-                .addParameter(ModClusterDefinition.CONTEXT)
+                .addParameter(ModClusterSubsystemResourceDefinition.VIRTUAL_HOST)
+                .addParameter(ModClusterSubsystemResourceDefinition.CONTEXT)
                 .setRuntimeOnly()
                 .build();
     }
@@ -62,7 +61,7 @@ public class ModClusterEnableContext implements OperationStepHandler {
                     try {
                         service.enableContext(contexthost.webhost, contexthost.webcontext);
                     } catch(IllegalArgumentException e) {
-                        throw new OperationFailedException(new ModelNode().set(MESSAGES.ContextorHostNotFound(contexthost.webhost, contexthost.webcontext)));
+                        throw new OperationFailedException(new ModelNode().set(ModClusterLogger.ROOT_LOGGER.ContextOrHostNotFound(contexthost.webhost, contexthost.webcontext)));
                     }
                     context.completeStep(new OperationContext.RollbackHandler() {
                         @Override

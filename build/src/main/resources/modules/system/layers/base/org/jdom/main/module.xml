@@ -20,7 +20,7 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<module xmlns="urn:jboss:module:1.1" name="org.jdom">
+<module xmlns="urn:jboss:module:1.3" name="org.jdom">
 
     <dependencies>
         <module name="org.jaxen"/>
@@ -28,7 +28,7 @@
     </dependencies>
 
     <resources>
-        <!-- Insert resources here -->
+        <artifact name="${org.jdom:jdom}"/>
     </resources>
 
 </module>

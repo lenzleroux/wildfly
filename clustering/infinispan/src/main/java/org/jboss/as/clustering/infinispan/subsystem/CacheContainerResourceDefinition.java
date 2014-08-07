@@ -23,6 +23,7 @@ package org.jboss.as.clustering.infinispan.subsystem;
 
 import org.jboss.as.clustering.controller.AttributeMarshallerFactory;
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
@@ -35,6 +36,9 @@ import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.services.path.ResolvePathHandler;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -45,142 +49,155 @@ import org.jboss.dmr.ModelType;
  */
 public class CacheContainerResourceDefinition extends SimpleResourceDefinition {
 
-    public static final PathElement CONTAINER_PATH = PathElement.pathElement(ModelKeys.CACHE_CONTAINER);
+    static final PathElement WILDCARD_PATH = pathElement(PathElement.WILDCARD_VALUE);
 
-    // attributes
-    static final AttributeDefinition ALIAS = new SimpleAttributeDefinitionBuilder(ModelKeys.ALIAS, ModelType.STRING, true)
+    static PathElement pathElement(String containerName) {
+        return PathElement.pathElement(ModelKeys.CACHE_CONTAINER, containerName);
+    }
+
+    private static final AttributeDefinition ALIAS = new SimpleAttributeDefinitionBuilder(ModelKeys.NAME, ModelType.STRING, true)
             .setXmlName(Attribute.NAME.getLocalName())
             .setAllowExpression(false)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .build()
-    ;
+            .build();
+
+    // attributes
     static final SimpleListAttributeDefinition ALIASES = SimpleListAttributeDefinition.Builder.of(ModelKeys.ALIASES, ALIAS)
             .setAllowNull(true)
             .setAttributeMarshaller(AttributeMarshallerFactory.createSimpleListAttributeMarshaller())
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition MODULE = new SimpleAttributeDefinitionBuilder(ModelKeys.MODULE, ModelType.STRING, true)
             .setXmlName(Attribute.MODULE.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setValidator(new ModuleIdentifierValidator(true))
             .setDefaultValue(new ModelNode().set("org.jboss.as.clustering.infinispan"))
-            .build()
-    ;
+            .build();
+
     // make default-cache non required (AS7-3488)
     static final SimpleAttributeDefinition DEFAULT_CACHE = new SimpleAttributeDefinitionBuilder(ModelKeys.DEFAULT_CACHE, ModelType.STRING, true)
             .setXmlName(Attribute.DEFAULT_CACHE.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition EVICTION_EXECUTOR = new SimpleAttributeDefinitionBuilder(ModelKeys.EVICTION_EXECUTOR, ModelType.STRING, true)
             .setXmlName(Attribute.EVICTION_EXECUTOR.getLocalName())
             .setAllowExpression(false)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition JNDI_NAME = new SimpleAttributeDefinitionBuilder(ModelKeys.JNDI_NAME, ModelType.STRING, true)
             .setXmlName(Attribute.JNDI_NAME.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition LISTENER_EXECUTOR = new SimpleAttributeDefinitionBuilder(ModelKeys.LISTENER_EXECUTOR, ModelType.STRING, true)
             .setXmlName(Attribute.LISTENER_EXECUTOR.getLocalName())
             .setAllowExpression(false)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .build()
-    ;
-    static final SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(ModelKeys.NAME, ModelType.STRING, true)
-            .setXmlName(Attribute.NAME.getLocalName())
-            .setAllowExpression(false)
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition REPLICATION_QUEUE_EXECUTOR = new SimpleAttributeDefinitionBuilder(ModelKeys.REPLICATION_QUEUE_EXECUTOR, ModelType.STRING, true)
             .setXmlName(Attribute.REPLICATION_QUEUE_EXECUTOR.getLocalName())
             .setAllowExpression(false)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition START = new SimpleAttributeDefinitionBuilder(ModelKeys.START, ModelType.STRING, true)
             .setXmlName(Attribute.START.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setValidator(new EnumValidator<>(StartMode.class, true, false))
             .setDefaultValue(new ModelNode().set(StartMode.LAZY.name()))
-            .build()
-    ;
+            .build();
+
     static final SimpleAttributeDefinition STATISTICS_ENABLED = new SimpleAttributeDefinitionBuilder(ModelKeys.STATISTICS_ENABLED, ModelType.BOOLEAN, true)
             .setXmlName(Attribute.STATISTICS_ENABLED.getLocalName())
             .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
             .setDefaultValue(new ModelNode().set(false))
-            .build()
-    ;
+            .build();
 
-    static final AttributeDefinition[] CACHE_CONTAINER_ATTRIBUTES = { DEFAULT_CACHE, ALIASES, JNDI_NAME, START, LISTENER_EXECUTOR, EVICTION_EXECUTOR, REPLICATION_QUEUE_EXECUTOR, MODULE, STATISTICS_ENABLED};
+    static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] {
+            DEFAULT_CACHE, ALIASES, JNDI_NAME, START, LISTENER_EXECUTOR, EVICTION_EXECUTOR, REPLICATION_QUEUE_EXECUTOR, MODULE, STATISTICS_ENABLED
+    };
 
-    // operations
-    static final OperationDefinition ALIAS_ADD = new SimpleOperationDefinitionBuilder("add-alias", InfinispanExtension.getResourceDescriptionResolver("cache-container.alias"))
-            .setParameters(NAME)
-            .build()
-    ;
-    static final OperationDefinition ALIAS_REMOVE = new SimpleOperationDefinitionBuilder("remove-alias", InfinispanExtension.getResourceDescriptionResolver("cache-container.alias"))
-            .setParameters(NAME)
-            .build()
-    ;
+    static final OperationDefinition ALIAS_ADD = new SimpleOperationDefinitionBuilder("add-alias", InfinispanExtension.getResourceDescriptionResolver("cache-container"))
+            .setParameters(ALIAS)
+            .build();
 
-    // metrics
-    static final AttributeDefinition CACHE_MANAGER_STATUS = new SimpleAttributeDefinitionBuilder(MetricKeys.CACHE_MANAGER_STATUS, ModelType.STRING, true).setStorageRuntime().build();
-    static final AttributeDefinition CLUSTER_NAME = new SimpleAttributeDefinitionBuilder(MetricKeys.CLUSTER_NAME, ModelType.STRING, true).setStorageRuntime().build();
-    static final AttributeDefinition COORDINATOR_ADDRESS = new SimpleAttributeDefinitionBuilder(MetricKeys.COORDINATOR_ADDRESS, ModelType.STRING, true).setStorageRuntime().build();
-    static final AttributeDefinition IS_COORDINATOR = new SimpleAttributeDefinitionBuilder(MetricKeys.IS_COORDINATOR, ModelType.BOOLEAN, true).setStorageRuntime().build();
-    static final AttributeDefinition LOCAL_ADDRESS = new SimpleAttributeDefinitionBuilder(MetricKeys.LOCAL_ADDRESS, ModelType.STRING, true).setStorageRuntime().build();
+    static final OperationDefinition ALIAS_REMOVE = new SimpleOperationDefinitionBuilder("remove-alias", InfinispanExtension.getResourceDescriptionResolver("cache-container"))
+            .setParameters(ALIAS)
+            .build();
 
-    static final AttributeDefinition[] CACHE_CONTAINER_METRICS = { CACHE_MANAGER_STATUS, CLUSTER_NAME, COORDINATOR_ADDRESS, IS_COORDINATOR, LOCAL_ADDRESS };
+    static void buildTransformation(ModelVersion version, ResourceTransformationDescriptionBuilder parent) {
+        ResourceTransformationDescriptionBuilder builder = parent.addChildResource(WILDCARD_PATH);
+
+        if (InfinispanModel.VERSION_2_0_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder()
+                    // discard statistics if set to true, reject otherwise
+                    .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, false, new ModelNode(true)), STATISTICS_ENABLED)
+                    .addRejectCheck(RejectAttributeChecker.UNDEFINED, STATISTICS_ENABLED)
+                    .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, STATISTICS_ENABLED)
+                    .addRejectCheck(new RejectAttributeChecker.SimpleRejectAttributeChecker(new ModelNode(false)), STATISTICS_ENABLED);
+        }
+
+        if (InfinispanModel.VERSION_1_4_0.requiresTransformation(version)) {
+            builder.getAttributeBuilder().addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, ALIASES, JNDI_NAME, START, LISTENER_EXECUTOR, EVICTION_EXECUTOR, REPLICATION_QUEUE_EXECUTOR, MODULE);
+        }
+
+        TransportResourceDefinition.buildTransformation(version, builder);
+
+        DistributedCacheResourceDefinition.buildTransformation(version, builder);
+        ReplicatedCacheResourceDefinition.buildTransformation(version, builder);
+        InvalidationCacheResourceDefinition.buildTransformation(version, builder);
+        LocalCacheResourceDefinition.buildTransformation(version, builder);
+    }
 
     private final ResolvePathHandler resolvePathHandler;
-    private final boolean runtimeRegistration;
+    private final boolean allowRuntimeOnlyRegistration;
 
-    public CacheContainerResourceDefinition(final ResolvePathHandler resolvePathHandler, final boolean runtimeRegistration) {
-        super(CONTAINER_PATH,
-                InfinispanExtension.getResourceDescriptionResolver(ModelKeys.CACHE_CONTAINER),
-                CacheContainerAdd.INSTANCE,
-                CacheContainerRemove.INSTANCE);
+    CacheContainerResourceDefinition(ResolvePathHandler resolvePathHandler, boolean allowRuntimeOnlyRegistration) {
+        super(WILDCARD_PATH, InfinispanExtension.getResourceDescriptionResolver(ModelKeys.CACHE_CONTAINER),
+                new CacheContainerAddHandler(), new CacheContainerRemoveHandler());
         this.resolvePathHandler = resolvePathHandler;
-        this.runtimeRegistration = runtimeRegistration;
+        this.allowRuntimeOnlyRegistration = allowRuntimeOnlyRegistration;
     }
 
     @Override
-    public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
+    public void registerAttributes(ManagementResourceRegistration registration) {
         // the handlers need to take account of alias
-        final OperationStepHandler writeHandler = new CacheContainerWriteAttributeHandler(CACHE_CONTAINER_ATTRIBUTES);
-        for (AttributeDefinition attr : CACHE_CONTAINER_ATTRIBUTES) {
-            resourceRegistration.registerReadWriteAttribute(attr, CacheContainerReadAttributeHandler.INSTANCE, writeHandler);
+        final OperationStepHandler writeHandler = new CacheContainerWriteAttributeHandler(ATTRIBUTES);
+        for (AttributeDefinition attr : ATTRIBUTES) {
+            registration.registerReadWriteAttribute(attr, CacheContainerReadAttributeHandler.INSTANCE, writeHandler);
         }
 
-        for (AttributeDefinition attr : CACHE_CONTAINER_METRICS) {
-            resourceRegistration.registerMetric(attr, CacheContainerMetricsHandler.INSTANCE);
+        if (this.allowRuntimeOnlyRegistration) {
+            OperationStepHandler handler = new CacheContainerMetricsHandler();
+            for (CacheContainerMetric metric: CacheContainerMetric.values()) {
+                registration.registerMetric(metric.getDefinition(), handler);
+            }
         }
     }
 
     @Override
-    public void registerOperations(ManagementResourceRegistration resourceRegistration) {
-        super.registerOperations(resourceRegistration);
+    public void registerOperations(ManagementResourceRegistration registration) {
+        super.registerOperations(registration);
         // register add-alias and remove-alias
-        resourceRegistration.registerOperationHandler(CacheContainerResourceDefinition.ALIAS_ADD, AddAliasCommand.INSTANCE);
-        resourceRegistration.registerOperationHandler(CacheContainerResourceDefinition.ALIAS_REMOVE, RemoveAliasCommand.INSTANCE);
+        registration.registerOperationHandler(CacheContainerResourceDefinition.ALIAS_ADD, AddAliasCommand.INSTANCE);
+        registration.registerOperationHandler(CacheContainerResourceDefinition.ALIAS_REMOVE, RemoveAliasCommand.INSTANCE);
     }
 
     @Override
-    public void registerChildren(ManagementResourceRegistration resourceRegistration) {
+    public void registerChildren(ManagementResourceRegistration registration) {
         // child resources
-        resourceRegistration.registerSubModel(new TransportResourceDefinition());
-        resourceRegistration.registerSubModel(new LocalCacheResourceDefinition(this.resolvePathHandler, this.runtimeRegistration));
-        resourceRegistration.registerSubModel(new InvalidationCacheResourceDefinition(this.resolvePathHandler, this.runtimeRegistration));
-        resourceRegistration.registerSubModel(new ReplicatedCacheResourceDefinition(this.resolvePathHandler, this.runtimeRegistration));
-        resourceRegistration.registerSubModel(new DistributedCacheResourceDefinition(this.resolvePathHandler, this.runtimeRegistration));
+        registration.registerSubModel(new TransportResourceDefinition());
+        registration.registerSubModel(new LocalCacheResourceDefinition(this.resolvePathHandler, this.allowRuntimeOnlyRegistration));
+        registration.registerSubModel(new InvalidationCacheResourceDefinition(this.resolvePathHandler, this.allowRuntimeOnlyRegistration));
+        registration.registerSubModel(new ReplicatedCacheResourceDefinition(this.resolvePathHandler, this.allowRuntimeOnlyRegistration));
+        registration.registerSubModel(new DistributedCacheResourceDefinition(this.resolvePathHandler, this.allowRuntimeOnlyRegistration));
     }
 }

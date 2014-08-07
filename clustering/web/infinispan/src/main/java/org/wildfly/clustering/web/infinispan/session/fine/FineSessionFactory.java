@@ -30,7 +30,7 @@ import org.jboss.as.clustering.marshalling.MarshalledValue;
 import org.jboss.as.clustering.marshalling.MarshallingContext;
 import org.wildfly.clustering.web.LocalContextFactory;
 import org.wildfly.clustering.web.infinispan.CacheEntryMutator;
-import org.wildfly.clustering.web.infinispan.InfinispanWebLogger;
+import org.wildfly.clustering.web.infinispan.logging.InfinispanWebLogger;
 import org.wildfly.clustering.web.infinispan.session.InfinispanImmutableSession;
 import org.wildfly.clustering.web.infinispan.session.InfinispanSession;
 import org.wildfly.clustering.web.infinispan.session.SessionAttributeMarshaller;
@@ -84,19 +84,19 @@ public class FineSessionFactory<L> implements SessionFactory<FineSessionCacheEnt
 
     @Override
     public FineSessionCacheEntry<L> findValue(String id) {
-        return this.invoker.invoke(this.sessionCache, new FindOperation<String, FineSessionCacheEntry<L>>(id));
+        return this.invoker.invoke(this.sessionCache, new LockingFindOperation<String, FineSessionCacheEntry<L>>(id));
     }
 
     @Override
     public FineSessionCacheEntry<L> createValue(String id) {
         FineSessionCacheEntry<L> entry = new FineSessionCacheEntry<>(new SimpleSessionMetaData());
-        FineSessionCacheEntry<L> existing = this.invoker.invoke(this.sessionCache, new CreateOperation<>(id, entry));
+        FineSessionCacheEntry<L> existing = this.invoker.invoke(this.sessionCache, new CreateOperation<>(id, entry), Flag.FORCE_SYNCHRONOUS);
         return (existing != null) ? existing : entry;
     }
 
     @Override
     public void remove(final String id) {
-        final FineSessionCacheEntry<L> entry = this.invoker.invoke(this.sessionCache, new RemoveOperation<String, FineSessionCacheEntry<L>>(id));
+        final FineSessionCacheEntry<L> entry = this.invoker.invoke(this.sessionCache, new RemoveOperation<String, FineSessionCacheEntry<L>>(id), Flag.FORCE_SYNCHRONOUS);
         Operation<SessionAttributeCacheKey, MarshalledValue<Object, MarshallingContext>, Void> attributeOperation = new Operation<SessionAttributeCacheKey, MarshalledValue<Object,MarshallingContext>, Void>() {
             @Override
             public Void invoke(Cache<SessionAttributeCacheKey, MarshalledValue<Object, MarshallingContext>> cache) {
@@ -106,7 +106,7 @@ public class FineSessionFactory<L> implements SessionFactory<FineSessionCacheEnt
                 return null;
             }
         };
-        this.invoker.invoke(this.attributeCache, attributeOperation, Flag.IGNORE_RETURN_VALUES, Flag.SKIP_LOCKING);
+        this.invoker.invoke(this.attributeCache, attributeOperation, Flag.IGNORE_RETURN_VALUES);
     }
 
     @Override

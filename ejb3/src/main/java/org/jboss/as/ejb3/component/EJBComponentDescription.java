@@ -22,8 +22,6 @@
 package org.jboss.as.ejb3.component;
 
 
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
-
 import javax.ejb.EJBLocalObject;
 import javax.ejb.TimerService;
 import javax.ejb.TransactionAttributeType;
@@ -65,6 +63,7 @@ import org.jboss.as.ee.component.ViewService;
 import org.jboss.as.ee.component.interceptors.ComponentDispatcherInterceptor;
 import org.jboss.as.ee.component.interceptors.InterceptorOrder;
 import org.jboss.as.ee.naming.ContextInjectionSource;
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.component.interceptors.AdditionalSetupInterceptor;
 import org.jboss.as.ejb3.component.interceptors.CurrentInvocationContextInterceptor;
 import org.jboss.as.ejb3.component.interceptors.EjbExceptionTransformingInterceptorFactories;
@@ -254,6 +253,8 @@ public abstract class EJBComponentDescription extends ComponentDescription {
      */
     private Boolean missingMethodPermissionsDenyAccess = null;
 
+    private String policyContextID;
+
     /**
      * Construct a new instance.
      *
@@ -297,6 +298,7 @@ public abstract class EJBComponentDescription extends ComponentDescription {
             @Override
             public void configure(final DeploymentPhaseContext context, final ComponentDescription description, final ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
 
+                policyContextID = SecurityContextInterceptorFactory.contextIdForDeployment(context.getDeploymentUnit());
                 //make sure java:comp/env is always available, even if nothing is bound there
                 if (description.getNamingMode() == ComponentNamingMode.CREATE) {
                     description.getBindingConfigurations().add(new BindingConfiguration("java:comp/env", new ContextInjectionSource("env", "java:comp/env")));
@@ -315,9 +317,7 @@ public abstract class EJBComponentDescription extends ComponentDescription {
                     configuration.addTimeoutViewInterceptor(new ImmediateInterceptorFactory(new ContextClassLoaderInterceptor(classLoader)), InterceptorOrder.View.TCCL_INTERCEPTOR);
                     configuration.addTimeoutViewInterceptor(configuration.getNamespaceContextInterceptorFactory(), InterceptorOrder.View.JNDI_NAMESPACE_INTERCEPTOR);
                     configuration.addTimeoutViewInterceptor(CurrentInvocationContextInterceptor.FACTORY, InterceptorOrder.View.INVOCATION_CONTEXT_INTERCEPTOR);
-                    if (isSecurityEnabled()) {
-                        configuration.addTimeoutViewInterceptor(new SecurityContextInterceptorFactory(true), InterceptorOrder.View.SECURITY_CONTEXT);
-                    }
+                    configuration.addTimeoutViewInterceptor(new SecurityContextInterceptorFactory(hasBeanLevelSecurityMetadata(), policyContextID), InterceptorOrder.View.SECURITY_CONTEXT);
                     for (final Method method : configuration.getClassIndex().getClassMethods()) {
                         configuration.addTimeoutViewInterceptor(method, new ImmediateInterceptorFactory(new ComponentDispatcherInterceptor(method)), InterceptorOrder.View.COMPONENT_DISPATCHER);
                     }
@@ -613,7 +613,7 @@ public abstract class EJBComponentDescription extends ComponentDescription {
 
     public void setDeclaredRoles(Collection<String> roles) {
         if (roles == null) {
-            throw MESSAGES.SecurityRolesIsNull();
+            throw EjbLogger.ROOT_LOGGER.SecurityRolesIsNull();
         }
         this.declaredRoles.clear();
         this.declaredRoles.addAll(roles);
@@ -690,10 +690,10 @@ public abstract class EJBComponentDescription extends ComponentDescription {
 
     public void linkSecurityRoles(final String fromRole, final String toRole) {
         if (fromRole == null || fromRole.trim().isEmpty()) {
-            throw MESSAGES.failToLinkFromEmptySecurityRole(fromRole);
+            throw EjbLogger.ROOT_LOGGER.failToLinkFromEmptySecurityRole(fromRole);
         }
         if (toRole == null || toRole.trim().isEmpty()) {
-            throw MESSAGES.failToLinkToEmptySecurityRole(toRole);
+            throw EjbLogger.ROOT_LOGGER.failToLinkToEmptySecurityRole(toRole);
         }
 
         Collection<String> roleLinks = this.securityRoleLinks.get(fromRole);
@@ -746,12 +746,39 @@ public abstract class EJBComponentDescription extends ComponentDescription {
 
 
     /**
-     * Returns true if this bean is secured. Else returns false.
+     * Returns true if this component description has any security metadata configured at the EJB level.
+     * Else returns false. Note that this method does *not* consider method level security metadata.
      *
+     * @param ejbComponentDescription The EJB component description
      * @return
      */
-    public boolean isSecurityEnabled() {
-        return this.securityDomain != null;
+    public boolean hasBeanLevelSecurityMetadata() {
+     // if an explicit security-domain is present, then we consider it the bean to be processed by security interceptors
+        if (securityDomain != null) {
+            return true;
+        }
+        // if a run-as is present, then we consider it the bean to be processed by security interceptors
+        if (runAsRole != null) {
+            return true;
+        }
+        // if a run-as-principal is present, then we consider it the bean to be processed by security interceptors
+        if (runAsPrincipal != null) {
+            return true;
+        }
+        // if security roles are configured then we consider the bean to be processed by security interceptors
+        if (securityRoles != null && !securityRoles.isEmpty()) {
+            return true;
+        }
+        // if security role links are configured then we consider the bean to be processed by security interceptors
+        if (securityRoleLinks != null && !securityRoleLinks.isEmpty()) {
+            return true;
+        }
+        // if declared roles are configured then we consider the bean to be processed by security interceptors
+        if (declaredRoles != null && !declaredRoles.isEmpty()) {
+            return true;
+        }
+        // no security metadata at bean level
+        return false;
     }
 
     private static class Ejb2ViewTypeConfigurator implements ViewConfigurator {
@@ -783,7 +810,7 @@ public abstract class EJBComponentDescription extends ComponentDescription {
             final DeploymentUnit deploymentUnit = context.getDeploymentUnit();
             final ApplicationExceptions appExceptions = deploymentUnit.getAttachment(EjbDeploymentAttachmentKeys.APPLICATION_EXCEPTION_DETAILS);
             if (appExceptions == null) {
-                throw MESSAGES.ejbJarConfigNotFound(deploymentUnit);
+                throw EjbLogger.ROOT_LOGGER.ejbJarConfigNotFound(deploymentUnit);
             }
             final EJBComponentCreateServiceFactory ejbComponentCreateServiceFactory = (EJBComponentCreateServiceFactory) configuration.getComponentCreateServiceFactory();
             ejbComponentCreateServiceFactory.setEjbJarConfiguration(appExceptions);
@@ -836,7 +863,7 @@ public abstract class EJBComponentDescription extends ComponentDescription {
         public Object processInvocation(InterceptorContext context) throws Exception {
             final ComponentView componentView = context.getPrivateData(ComponentView.class);
             if (componentView == null) {
-                throw MESSAGES.componentViewNotAvailableInContext(context);
+                throw EjbLogger.ROOT_LOGGER.componentViewNotAvailableInContext(context);
             }
             return "Proxy for view class: " + componentView.getViewClass().getName() + " of EJB: " + name;
         }
@@ -993,6 +1020,14 @@ public abstract class EJBComponentDescription extends ComponentDescription {
             }
         }
         return this.allContainerInterceptors;
+    }
+
+    public String getPolicyContextID() {
+        return policyContextID;
+    }
+
+    public void setPolicyContextID(String policyContextID) {
+        this.policyContextID = policyContextID;
     }
 
     @Override

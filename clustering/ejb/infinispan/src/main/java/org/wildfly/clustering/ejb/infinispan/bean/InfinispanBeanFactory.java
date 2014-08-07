@@ -38,8 +38,7 @@ import org.wildfly.clustering.ejb.infinispan.BeanGroup;
 import org.wildfly.clustering.ejb.infinispan.BeanGroupEntry;
 import org.wildfly.clustering.ejb.infinispan.BeanGroupFactory;
 import org.wildfly.clustering.ejb.infinispan.BeanKey;
-import org.wildfly.clustering.ejb.infinispan.InfinispanEjbLogger;
-import org.wildfly.clustering.ejb.infinispan.InfinispanEjbMessages;
+import org.wildfly.clustering.ejb.infinispan.logging.InfinispanEjbLogger;
 
 /**
  * Encapsulates the cache mapping strategy for a bean.
@@ -77,7 +76,7 @@ public class InfinispanBeanFactory<G, I, T> implements BeanFactory<G, I, T> {
         G groupId = entry.getGroupId();
         BeanGroupEntry<I, T> groupEntry = this.groupFactory.findValue(groupId);
         if (groupEntry == null) {
-             throw InfinispanEjbMessages.MESSAGES.invalidBeanGroup(id, groupId);
+             throw InfinispanEjbLogger.ROOT_LOGGER.invalidBeanGroup(id, groupId);
         }
         BeanGroup<G, I, T> group = this.groupFactory.createGroup(groupId, groupEntry);
         Mutator mutator = (entry.getLastAccessedTime() == null) ? Mutator.PASSIVE : new BeanMutator<>(this.invoker, this.cache, this.createKey(id), entry);
@@ -86,19 +85,19 @@ public class InfinispanBeanFactory<G, I, T> implements BeanFactory<G, I, T> {
 
     @Override
     public BeanEntry<G> findValue(I id) {
-        return this.invoker.invoke(this.cache, new FindOperation<BeanKey<I>, BeanEntry<G>>(this.createKey(id)));
+        return this.invoker.invoke(this.cache, new LockingFindOperation<BeanKey<I>, BeanEntry<G>>(this.createKey(id)));
     }
 
     @Override
     public BeanEntry<G> createValue(I id, G groupId) {
         BeanEntry<G> entry = new InfinispanBeanEntry<>(groupId);
-        BeanEntry<G> existing = this.invoker.invoke(this.cache, new Creator.CreateOperation<>(this.createKey(id), entry));
+        BeanEntry<G> existing = this.invoker.invoke(this.cache, new Creator.CreateOperation<>(this.createKey(id), entry), Flag.FORCE_SYNCHRONOUS);
         return (existing != null) ? existing : entry;
     }
 
     @Override
     public void remove(I id, RemoveListener<T> listener) {
-        BeanEntry<G> entry = this.invoker.invoke(this.cache, new RemoveOperation<BeanKey<I>, BeanEntry<G>>(this.createKey(id)));
+        BeanEntry<G> entry = this.invoker.invoke(this.cache, new RemoveOperation<BeanKey<I>, BeanEntry<G>>(this.createKey(id)), Flag.FORCE_SYNCHRONOUS);
         if (entry != null) {
             G groupId = entry.getGroupId();
             try (BeanGroup<G, I, T> group = this.groupFactory.createGroup(groupId, this.groupFactory.findValue(groupId))) {

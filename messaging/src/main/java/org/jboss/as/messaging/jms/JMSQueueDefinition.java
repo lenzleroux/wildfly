@@ -34,7 +34,6 @@ import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
-import org.jboss.as.controller.SimpleOperationDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.access.constraint.ApplicationTypeConfig;
 import org.jboss.as.controller.access.management.AccessConstraintDefinition;
@@ -122,7 +121,11 @@ public class JMSQueueDefinition extends SimpleResourceDefinition {
                 if (deployed) {
                     registry.registerReadOnlyAttribute(attr, JMSQueueConfigurationRuntimeHandler.INSTANCE);
                 } else {
-                    registry.registerReadOnlyAttribute(attr, null);
+                    if (attr == CommonAttributes.DESTINATION_ENTRIES) {
+                        registry.registerReadWriteAttribute(attr, null, JMSQueueConfigurationWriteHandler.INSTANCE);
+                    } else {
+                        registry.registerReadOnlyAttribute(attr, null);
+                    }
                 }
             }
         }
@@ -144,13 +147,10 @@ public class JMSQueueDefinition extends SimpleResourceDefinition {
         super.registerOperations(registry);
 
         if (registerRuntimeOnly) {
-            JMSQueueControlHandler.INSTANCE.registerOperations(registry);
+            JMSQueueControlHandler.INSTANCE.registerOperations(registry, getResourceDescriptionResolver());
 
             if (!deployed) {
-                SimpleOperationDefinition op = new SimpleOperationDefinition(ConnectionFactoryAddJndiHandler.ADD_JNDI,
-                        getResourceDescriptionResolver(),
-                        ConnectionFactoryAddJndiHandler.JNDI_BINDING);
-                registry.registerOperationHandler(op, JMSQueueAddJndiHandler.INSTANCE);
+                JMSQueueUpdateJndiHandler.registerOperations(registry, getResourceDescriptionResolver());
             }
         }
     }

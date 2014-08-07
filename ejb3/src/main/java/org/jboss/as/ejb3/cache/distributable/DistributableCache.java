@@ -24,12 +24,12 @@ package org.jboss.as.ejb3.cache.distributable;
 import java.util.UUID;
 
 import org.jboss.as.ejb3.cache.Cache;
+import org.jboss.as.ejb3.cache.Contextual;
 import org.jboss.as.ejb3.cache.Identifiable;
 import org.jboss.as.ejb3.cache.StatefulObjectFactory;
-import org.jboss.as.server.ServerEnvironment;
 import org.jboss.ejb.client.Affinity;
-import org.jboss.ejb.client.NodeAffinity;
 import org.wildfly.clustering.ejb.Batch;
+import org.wildfly.clustering.ejb.BatchContext;
 import org.wildfly.clustering.ejb.Bean;
 import org.wildfly.clustering.ejb.BeanManager;
 import org.wildfly.clustering.ejb.RemoveListener;
@@ -46,24 +46,21 @@ import org.wildfly.clustering.ejb.RemoveListener;
  * @param <K> the cache key type
  * @param <V> the cache value type
  */
-public class DistributableCache<K, V extends Identifiable<K>> implements Cache<K, V> {
+public class DistributableCache<K, V extends Identifiable<K> & Contextual<Batch>> implements Cache<K, V> {
 
-    private final BeanManager<UUID, K, V> manager;
+    private final BeanManager<UUID, K, V, Batch> manager;
     private final StatefulObjectFactory<V> factory;
     private final RemoveListener<V> listener;
-    private final ServerEnvironment environment;
 
-    public DistributableCache(BeanManager<UUID, K, V> manager, StatefulObjectFactory<V> factory, ServerEnvironment environment) {
+    public DistributableCache(BeanManager<UUID, K, V, Batch> manager, StatefulObjectFactory<V> factory) {
         this.manager = manager;
         this.factory = factory;
         this.listener = new RemoveListenerAdapter<>(factory);
-        this.environment = environment;
     }
 
     @Override
     public Affinity getStrictAffinity() {
-        Affinity affinity = this.manager.getStrictAffinity();
-        return (affinity != null) ? affinity : new NodeAffinity(this.environment.getNodeName());
+        return this.manager.getStrictAffinity();
     }
 
     @Override
@@ -113,32 +110,33 @@ public class DistributableCache<K, V extends Identifiable<K>> implements Cache<K
 
     @Override
     public V get(K id) {
-        BatchStack.pushBatch(this.manager.getBatcher().startBatch());
+        Batch batch = this.manager.getBatcher().startBatch();
         try {
             Bean<UUID, K, V> bean = this.manager.findBean(id);
             if (bean == null) {
-                BatchStack.popBatch().close();
+                batch.close();
                 return null;
             }
-            return bean.acquire();
+            V result = bean.acquire();
+            result.setCacheContext(batch);
+            return result;
         } catch (RuntimeException | Error e) {
-            BatchStack.popBatch().discard();
+            batch.discard();
             throw e;
         }
     }
 
     @Override
     public void release(V value) {
-        K id = value.getId();
-        try {
-            Bean<UUID, K, V> bean = this.manager.findBean(id);
-            if (bean != null) {
-                if (bean.release()) {
-                    bean.close();
+        try (BatchContext context = this.manager.getBatcher().resume(value.getCacheContext())) {
+            try (Batch batch = value.getCacheContext()) {
+                Bean<UUID, K, V> bean = this.manager.findBean(value.getId());
+                if (bean != null) {
+                    if (bean.release()) {
+                        bean.close();
+                    }
                 }
             }
-        } finally {
-            BatchStack.popBatch().close();
         }
     }
 
@@ -148,18 +146,17 @@ public class DistributableCache<K, V extends Identifiable<K>> implements Cache<K
         if (bean != null) {
             bean.remove(this.listener);
         }
-        // Batch will be popped in release(...) or discard(...)
     }
 
     @Override
-    public void discard(K id) {
-        try {
-            Bean<UUID, K, V> bean = this.manager.findBean(id);
-            if (bean != null) {
-                bean.remove(null);
+    public void discard(V value) {
+        try (BatchContext context = this.manager.getBatcher().resume(value.getCacheContext())) {
+            try (Batch batch = value.getCacheContext()) {
+                Bean<UUID, K, V> bean = this.manager.findBean(value.getId());
+                if (bean != null) {
+                    bean.remove(null);
+                }
             }
-        } finally {
-            BatchStack.popBatch().close();
         }
     }
 

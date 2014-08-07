@@ -22,6 +22,16 @@
 
 package org.jboss.as.connector.deployers.datasource;
 
+import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
+
+import java.lang.reflect.Method;
+import java.sql.Connection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+
+import javax.sql.XADataSource;
+
 import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.services.driver.registry.DriverRegistry;
 import org.jboss.as.connector.subsystems.datasources.AbstractDataSourceService;
@@ -49,9 +59,9 @@ import org.jboss.as.server.deployment.reflect.DeploymentReflectionIndex;
 import org.jboss.invocation.proxy.MethodIdentifier;
 import org.jboss.jca.common.api.metadata.Defaults;
 import org.jboss.jca.common.api.metadata.ds.TransactionIsolation;
+import org.jboss.jca.common.metadata.ds.DsPoolImpl;
 import org.jboss.jca.common.metadata.ds.DsSecurityImpl;
-import org.jboss.jca.common.metadata.ds.v12.DsPoolImpl;
-import org.jboss.jca.common.metadata.ds.v12.DsXaPoolImpl;
+import org.jboss.jca.common.metadata.ds.DsXaPoolImpl;
 import org.jboss.jca.core.api.connectionmanager.ccm.CachedConnectionManager;
 import org.jboss.jca.core.api.management.ManagementRepository;
 import org.jboss.jca.core.spi.transaction.TransactionIntegration;
@@ -63,15 +73,6 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.security.SubjectFactory;
-
-import javax.sql.XADataSource;
-import java.lang.reflect.Method;
-import java.sql.Connection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-
-import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
 
 /**
  * A binding description for DataSourceDefinition annotations.
@@ -167,7 +168,7 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
                 final ModifiableXaDataSource dataSource = new ModifiableXaDataSource(transactionIsolation(),
                         null, dsSecurity, null, null, null,
                         null, null, null, poolName, true,
-                        jndiName, false, false, props,
+                        jndiName, false, false, Defaults.CONNECTABLE, Defaults.TRACKING, props,
                         className, null, null,
                         xaPool, null);
                 final XaDataSourceService xds = new XaDataSourceService(jndiName, module.getClassLoader());
@@ -179,7 +180,7 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
                                                              maxPoolSize < 1 ? Defaults.MAX_POOL_SIZE : Integer.valueOf(maxPoolSize),
                                                              Defaults.PREFILL, Defaults.USE_STRICT_MIN, Defaults.FLUSH_STRATEGY, Boolean.FALSE, null, null);
                 final ModifiableDataSource dataSource = new ModifiableDataSource(url, null, className, null, transactionIsolation(), props,
-                        null, dsSecurity, null, null, null, null, null, false, poolName, true, jndiName, Defaults.SPY, Defaults.USE_CCM, transactional, commonPool);
+                        null, dsSecurity, null, null, null, null, null, false, poolName, true, jndiName, Defaults.SPY, Defaults.USE_CCM, transactional, Defaults.CONNECTABLE, Defaults.TRACKING, commonPool);
                 final LocalDataSourceService ds = new LocalDataSourceService(jndiName, module.getClassLoader());
                 ds.getDataSourceConfigInjector().inject(dataSource);
                 startDataSource(ds, jndiName, eeModuleDescription, context, phaseContext.getServiceTarget(), serviceBuilder, injector);

@@ -14,7 +14,6 @@ import org.jboss.as.ee.concurrent.handle.ClassLoaderContextHandleFactory;
 import org.jboss.as.ee.concurrent.handle.NamingContextHandleFactory;
 import org.jboss.as.ee.concurrent.handle.OtherEESetupActionsContextHandleFactory;
 import org.jboss.as.ee.concurrent.handle.SecurityContextHandleFactory;
-import org.jboss.as.ee.concurrent.handle.TransactionLeakContextHandleFactory;
 import org.jboss.as.ee.concurrent.service.ConcurrentContextService;
 import org.jboss.as.ee.concurrent.service.ConcurrentServiceNames;
 import org.jboss.as.ee.structure.DeploymentType;
@@ -29,7 +28,6 @@ import org.jboss.invocation.InterceptorFactory;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 
-import javax.transaction.TransactionManager;
 import java.util.Collection;
 
 import static org.jboss.as.server.deployment.Attachments.MODULE;
@@ -61,7 +59,7 @@ public class EEConcurrentContextProcessor implements DeploymentUnitProcessor {
                 // skip components without namespace
                 continue;
             }
-            processComponentDescription(componentDescription, deploymentUnit);
+            processComponentDescription(componentDescription);
         }
     }
 
@@ -74,13 +72,13 @@ public class EEConcurrentContextProcessor implements DeploymentUnitProcessor {
         deploymentUnit.getAttachmentList(Attachments.WEB_SETUP_ACTIONS).add(setupAction);
     }
 
-    private void processComponentDescription(final ComponentDescription componentDescription, final DeploymentUnit deploymentUnit) {
+    private void processComponentDescription(final ComponentDescription componentDescription) {
         final ComponentConfigurator componentConfigurator = new ComponentConfigurator() {
             @Override
             public void configure(DeploymentPhaseContext context, ComponentDescription description, final ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
                 final ConcurrentContext concurrentContext = configuration.getConcurrentContext();
                 // setup context
-                setupConcurrentContext(concurrentContext, description.getApplicationName(), description.getModuleName(), description.getComponentName(), configuration.getModuleClassLoader(), configuration.getNamespaceContextSelector(), deploymentUnit, context.getServiceTarget());
+                setupConcurrentContext(concurrentContext, description.getApplicationName(), description.getModuleName(), description.getComponentName(), configuration.getModuleClassLoader(), configuration.getNamespaceContextSelector(), context.getDeploymentUnit(), context.getServiceTarget());
                 // add the interceptor which manages the concurrent context
                 final ConcurrentContextInterceptor interceptor = new ConcurrentContextInterceptor(concurrentContext);
                 final InterceptorFactory interceptorFactory = new ImmediateInterceptorFactory(interceptor);
@@ -102,13 +100,10 @@ public class EEConcurrentContextProcessor implements DeploymentUnitProcessor {
         concurrentContext.addFactory(new ClassLoaderContextHandleFactory(moduleClassLoader));
         concurrentContext.addFactory(SecurityContextHandleFactory.INSTANCE);
         concurrentContext.addFactory(new OtherEESetupActionsContextHandleFactory(deploymentUnit.getAttachmentList(Attachments.OTHER_EE_SETUP_ACTIONS)));
-        final TransactionLeakContextHandleFactory transactionLeakContextHandleFactory = new TransactionLeakContextHandleFactory();
-        concurrentContext.addFactory(transactionLeakContextHandleFactory);
 
         final ConcurrentContextService service = new ConcurrentContextService(concurrentContext);
         final ServiceName serviceName = ConcurrentServiceNames.getConcurrentContextServiceName(applicationName, moduleName, componentName);
         serviceTarget.addService(serviceName, service)
-                .addDependency(ServiceName.JBOSS.append("txn", "TransactionManager"), TransactionManager.class, transactionLeakContextHandleFactory)
                 .install();
     }
 

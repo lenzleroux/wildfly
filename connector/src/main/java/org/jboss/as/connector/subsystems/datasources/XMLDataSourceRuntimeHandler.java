@@ -24,14 +24,14 @@ package org.jboss.as.connector.subsystems.datasources;
 
 import java.util.Map;
 
-import org.jboss.as.connector.logging.ConnectorMessages;
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.dmr.ModelNode;
-import org.jboss.jca.common.api.metadata.common.CommonPool;
-import org.jboss.jca.common.api.metadata.ds.v12.DataSource;
-import org.jboss.jca.common.api.metadata.ds.v12.DsPool;
+import org.jboss.jca.common.api.metadata.common.Pool;
+import org.jboss.jca.common.api.metadata.ds.DataSource;
+import org.jboss.jca.common.api.metadata.ds.DsPool;
 
 /**
  * Runtime attribute handler for XML datasources
@@ -56,7 +56,7 @@ public class XMLDataSourceRuntimeHandler extends AbstractXMLDataSourceRuntimeHan
         if(attributeName.equals(ModelDescriptionConstants.VALUE)) {
             setStringIfNotNull(context, dataSource.getConnectionProperties().get(propName));
         } else {
-            throw ConnectorMessages.MESSAGES.unknownAttribute(attributeName);
+            throw ConnectorLogger.ROOT_LOGGER.unknownAttribute(attributeName);
         }
     }
 
@@ -129,7 +129,7 @@ public class XMLDataSourceRuntimeHandler extends AbstractXMLDataSourceRuntimeHan
             setStringIfNotNull(context, dataSource.getPool().getCapacity().getDecrementer().getClassName());
 
         } else if (attributeName.equals(org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_PROPERTIES.getName())) {
-            CommonPool pool = dataSource.getPool();
+            Pool pool = dataSource.getPool();
             if (pool == null || ((DsPool) pool).getCapacity() == null || ((DsPool) pool).getCapacity().getIncrementer() == null)
                 return;
 
@@ -143,7 +143,7 @@ public class XMLDataSourceRuntimeHandler extends AbstractXMLDataSourceRuntimeHan
 
 
         } else if (attributeName.equals(org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_PROPERTIES.getName())) {
-            CommonPool pool = dataSource.getPool();
+            Pool pool = dataSource.getPool();
             if (pool == null || ((DsPool) pool).getCapacity() == null || ((DsPool) pool).getCapacity().getDecrementer() == null)
                 return;
 
@@ -348,20 +348,20 @@ public class XMLDataSourceRuntimeHandler extends AbstractXMLDataSourceRuntimeHan
         } else if (attributeName.equals(Constants.USE_CCM.getName())) {
             setBooleanIfNotNull(context, dataSource.isUseCcm());
         } else if (attributeName.equals(Constants.ALLOW_MULTIPLE_USERS.getName())) {
-            CommonPool pool = dataSource.getPool();
+            Pool pool = dataSource.getPool();
             if (!(pool instanceof DsPool)) {
                 return;
             }
             setBooleanIfNotNull(context, ((DsPool) pool).isAllowMultipleUsers());
         } else if (attributeName.equals(Constants.CONNECTION_LISTENER_CLASS.getName())) {
-            CommonPool pool = dataSource.getPool();
+            Pool pool = dataSource.getPool();
             if (!(pool instanceof DsPool) || ((DsPool) pool).getConnectionListener() == null) {
                 return;
             }
             setStringIfNotNull(context, ((DsPool) pool).getConnectionListener().getClassName());
 
         } else if (attributeName.equals(Constants.CONNECTION_LISTENER_PROPERTIES.getName())) {
-            CommonPool pool = dataSource.getPool();
+            Pool pool = dataSource.getPool();
             if (!(pool instanceof DsPool) || ((DsPool) pool).getConnectionListener() == null) {
                 return;
             }
@@ -372,8 +372,18 @@ public class XMLDataSourceRuntimeHandler extends AbstractXMLDataSourceRuntimeHan
             for (final Map.Entry<String, String> entry : propertiesMap.entrySet()) {
                 context.getResult().asPropertyList().add(new ModelNode().set(entry.getKey(), entry.getValue()).asProperty());
             }
+        } else if (attributeName.equals(Constants.CONNECTABLE.getName())) {
+            //Just set to false
+            context.getResult().set(false);
+        } else if (attributeName.equals(Constants.STATISTICS_ENABLED.getName())) {
+            //Just set to false
+            context.getResult().set(false);
+
+        } else if (attributeName.equals(Constants.TRACKING.getName())) {
+            //Just return w/o setting a result
+            return;
         } else {
-            throw ConnectorMessages.MESSAGES.unknownAttribute(attributeName);
+            throw ConnectorLogger.ROOT_LOGGER.unknownAttribute(attributeName);
         }
     }
 

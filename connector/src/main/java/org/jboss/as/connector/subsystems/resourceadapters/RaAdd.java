@@ -22,15 +22,17 @@
 
 package org.jboss.as.connector.subsystems.resourceadapters;
 
-import org.jboss.as.connector.logging.ConnectorMessages;
+import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
+import org.jboss.msc.service.ServiceName;
 
 import java.util.List;
 
@@ -59,9 +61,9 @@ public class RaAdd extends AbstractAddStepHandler {
         // Compensating is remove
         final ModelNode address = operation.require(OP_ADDR);
         final String name = PathAddress.pathAddress(address).getLastElement().getValue();
-        String archiveOrModuleName;
+        final String archiveOrModuleName;
         if (!model.hasDefined(ARCHIVE.getName()) && ! model.hasDefined(MODULE.getName())) {
-            throw ConnectorMessages.MESSAGES.archiveOrModuleRequired();
+            throw ConnectorLogger.ROOT_LOGGER.archiveOrModuleRequired();
         }
         if (model.get(ARCHIVE.getName()).isDefined()) {
             archiveOrModuleName = model.get(ARCHIVE.getName()).asString();
@@ -76,6 +78,34 @@ public class RaAdd extends AbstractAddStepHandler {
             RaOperationUtil.installRaServices(context, verificationHandler, name, resourceAdapter, newControllers);
         } else {
             RaOperationUtil.installRaServicesAndDeployFromModule(context, verificationHandler, name, resourceAdapter, archiveOrModuleName, newControllers);
+            if (context.isBooting()) {
+                context.addStep(new OperationStepHandler() {
+                    public void execute(final OperationContext context, ModelNode operation) throws OperationFailedException {
+                        final ServiceVerificationHandler svh = new ServiceVerificationHandler();
+
+                        //Next lines activate configuration on module deployed rar
+                        //in case there is 2 different resource-adapter config using same module deployed rar
+                        // a Deployment sercivice could be already present and need a restart to consider also this
+                        //newly added configuration
+                        ServiceName restartedServiceName = RaOperationUtil.restartIfPresent(context, archiveOrModuleName, name, svh);
+                        if (restartedServiceName == null) {
+                            RaOperationUtil.activate(context, name, svh);
+                        }
+                        context.addStep(svh, OperationContext.Stage.VERIFY);
+                        context.completeStep(new OperationContext.RollbackHandler() {
+                            @Override
+                            public void handleRollback(OperationContext context, ModelNode operation) {
+                                try {
+                                    RaOperationUtil.removeIfActive(context, archiveOrModuleName, name);
+                                } catch (OperationFailedException e) {
+
+                                }
+
+                            }
+                        });
+                    }
+                }, OperationContext.Stage.RUNTIME);
+            }
         }
 
 

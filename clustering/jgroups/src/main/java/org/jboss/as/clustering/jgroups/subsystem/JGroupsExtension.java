@@ -23,26 +23,19 @@ package org.jboss.as.clustering.jgroups.subsystem;
 
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.List;
+import java.util.EnumSet;
 
 import org.jboss.as.clustering.jgroups.LogFactory;
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
 import org.jboss.as.controller.ModelVersion;
-import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SubsystemRegistration;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.transform.description.RejectAttributeChecker;
-import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.controller.transform.description.TransformationDescription;
-import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
-import org.jboss.dmr.ModelNode;
-import org.jboss.staxmapper.XMLElementReader;
 import org.jgroups.Global;
 
 /**
@@ -54,14 +47,10 @@ import org.jgroups.Global;
 public class JGroupsExtension implements Extension {
 
     public static final String SUBSYSTEM_NAME = "jgroups";
-    static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, SUBSYSTEM_NAME);
-    public static final String RESOURCE_NAME = JGroupsExtension.class.getPackage().getName() + "." +"LocalDescriptions";
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
-    private static final int MANAGEMENT_API_MICRO_VERSION = 0;
+    private static final String RESOURCE_NAME = JGroupsExtension.class.getPackage().getName() + ".LocalDescriptions";
 
-    // Temporary workaround for JGRP-1475
+    // Workaround for JGRP-1475
     // Configure JGroups to use jboss-logging.
     static {
         PrivilegedAction<Void> action = new PrivilegedAction<Void>() {
@@ -91,19 +80,20 @@ public class JGroupsExtension implements Extension {
     @Override
     public void initialize(ExtensionContext context) {
 
-        // IMPORTANT: Management API version != xsd version! Not all Management API changes result in XSD changes
-        SubsystemRegistration registration = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION, MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
+        ModelVersion current = JGroupsModel.CURRENT.getVersion();
+        SubsystemRegistration registration = context.registerSubsystem(SUBSYSTEM_NAME, current.getMajor(), current.getMinor(), current.getMicro());
 
-        final boolean registerRuntimeOnly = context.isRuntimeOnlyRegistrationValid();
-        final ManagementResourceRegistration subsystem = registration.registerSubsystemModel(new JGroupsSubsystemRootResourceDefinition());
-        subsystem.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, JGroupsSubsystemDescribe.INSTANCE);
+        ManagementResourceRegistration subsystem = registration.registerSubsystemModel(new JGroupsSubsystemResourceDefinition(context.isRuntimeOnlyRegistrationValid()));
+        subsystem.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, new JGroupsSubsystemDescribeHandler());
 
-        subsystem.registerSubModel(new StackResourceDefinition(registerRuntimeOnly));
         registration.registerXMLElementWriter(new JGroupsSubsystemXMLWriter());
 
         if (context.isRegisterTransformers()) {
-            // Register the model transformers
-            registerTransformers(registration);
+            // Register transformers for all but the current model
+            for (JGroupsModel model: EnumSet.complementOf(EnumSet.of(JGroupsModel.CURRENT))) {
+                ModelVersion version = model.getVersion();
+                TransformationDescription.Tools.register(JGroupsSubsystemResourceDefinition.buildTransformers(version), registration, version);
+            }
         }
     }
 
@@ -113,76 +103,8 @@ public class JGroupsExtension implements Extension {
      */
     @Override
     public void initializeParsers(ExtensionParsingContext context) {
-        for (Namespace namespace: Namespace.values()) {
-            XMLElementReader<List<ModelNode>> reader = namespace.getXMLReader();
-            if (reader != null) {
-                context.setSubsystemXmlMapping(SUBSYSTEM_NAME, namespace.getUri(), reader);
-            }
+        for (JGroupsSchema schema: JGroupsSchema.values()) {
+            context.setSubsystemXmlMapping(SUBSYSTEM_NAME, schema.getNamespaceUri(), new JGroupsSubsystemXMLReader(schema));
         }
-    }
-
-    // Transformation
-
-    /**
-     * Register the transformers for older model versions.
-     *
-     * @param subsystem the subsystems registration
-     */
-    private static void registerTransformers(final SubsystemRegistration subsystem) {
-        registerTransformers_1_1_0(subsystem);
-        registerTransformers_1_2_0(subsystem);
-    }
-
-    /*
-     * Register transformer to transform from current model version to model version 1.1.0
-     */
-    private static void registerTransformers_1_1_0(final SubsystemRegistration subsystem) {
-        final ModelVersion version = ModelVersion.create(1,1,0);
-
-        final ResourceTransformationDescriptionBuilder subsystemBuilder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
-        final ResourceTransformationDescriptionBuilder stackBuilder = subsystemBuilder.addChildResource(StackResourceDefinition.STACK_PATH);
-
-        // reject expressions in certain transport usages
-        final ResourceTransformationDescriptionBuilder transportBuilder = stackBuilder.addChildResource(TransportResourceDefinition.TRANSPORT_PATH);
-        transportBuilder.getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, TransportResourceDefinition.SHARED)
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, TransportResourceDefinition.PROPERTIES)
-                .end();
-
-        final ResourceTransformationDescriptionBuilder transportPropertyBuilder = transportBuilder.addChildResource(PropertyResourceDefinition.PROPERTY_PATH);
-        transportPropertyBuilder.getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, PropertyResourceDefinition.VALUE)
-                .end();
-
-        final ResourceTransformationDescriptionBuilder protocolBuilder = stackBuilder.addChildResource(ProtocolResourceDefinition.PROTOCOL_PATH);
-        protocolBuilder.getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, ProtocolResourceDefinition.PROPERTIES)
-                .end();
-        final ResourceTransformationDescriptionBuilder protocolPropertyBuilder = protocolBuilder.addChildResource(PropertyResourceDefinition.PROPERTY_PATH);
-        protocolPropertyBuilder.getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, PropertyResourceDefinition.VALUE)
-                .end();
-
-        // reject relay
-        stackBuilder.rejectChildResource(RelayResource.PATH);
-
-        // now register the completed transform
-        TransformationDescription.Tools.register(subsystemBuilder.build(), subsystem, version);
-    }
-
-    /*
-     * Register transformer to transform from current model version to model version 1.2.0
-     */
-    private static void registerTransformers_1_2_0(final SubsystemRegistration subsystem) {
-        final ModelVersion version = ModelVersion.create(1,2,0);
-
-        final ResourceTransformationDescriptionBuilder subsystemBuilder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
-        final ResourceTransformationDescriptionBuilder stackBuilder = subsystemBuilder.addChildResource(StackResourceDefinition.STACK_PATH);
-
-        // reject relay
-        stackBuilder.rejectChildResource(RelayResource.PATH);
-
-        // now register the completed transform
-        TransformationDescription.Tools.register(subsystemBuilder.build(), subsystem, version);
     }
 }

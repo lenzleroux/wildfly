@@ -22,13 +22,13 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<module xmlns="urn:jboss:module:1.1" name="org.jboss.as.mail">
+<module xmlns="urn:jboss:module:1.3" name="org.jboss.as.mail">
     <properties>
         <property name="jboss.api" value="private"/>
     </properties>
 
     <resources>
-        <!-- Insert resources here -->
+        <artifact name="${org.wildfly:wildfly-mail}"/>
     </resources>
 
     <dependencies>
@@ -45,7 +45,7 @@
         <module name="org.jboss.as.server"/>
         <module name="org.jboss.as.ee"/>
         <module name="org.jboss.jandex"/>
-        <module name="org.jboss.metadata"/>
+        <module name="org.jboss.metadata.common"/>
         <module name="org.jboss.modules"/>
         <module name="org.jboss.msc"/>
         <module name="org.jboss.logging"/>

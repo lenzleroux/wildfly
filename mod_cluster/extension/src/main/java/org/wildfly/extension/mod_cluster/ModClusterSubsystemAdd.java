@@ -44,13 +44,13 @@ import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefiniti
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.SESSION_DRAINING_STRATEGY;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.SMAX;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.SOCKET_TIMEOUT;
+import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.STATUS_INTERVAL;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.STICKY_SESSION;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.STICKY_SESSION_FORCE;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.STICKY_SESSION_REMOVE;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.STOP_CONTEXT_TIMEOUT;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.TTL;
 import static org.wildfly.extension.mod_cluster.ModClusterConfigResourceDefinition.WORKER_TIMEOUT;
-import static org.wildfly.extension.mod_cluster.ModClusterExtension.SSL_CONFIGURATION_PATH;
 import static org.wildfly.extension.mod_cluster.ModClusterLogger.ROOT_LOGGER;
 import static org.wildfly.extension.mod_cluster.ModClusterSSLResourceDefinition.CA_CERTIFICATE_FILE;
 import static org.wildfly.extension.mod_cluster.ModClusterSSLResourceDefinition.CA_REVOCATION_URL;
@@ -114,7 +114,7 @@ class ModClusterSubsystemAdd extends AbstractBoottimeAddStepHandler {
     public void performBoottime(OperationContext context, ModelNode operation, ModelNode model, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> newControllers) throws OperationFailedException {
         ServiceTarget target = context.getServiceTarget();
         final ModelNode fullModel = Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS));
-        final ModelNode modelConfig = fullModel.get(ModClusterExtension.CONFIGURATION_PATH.getKeyValuePair());
+        final ModelNode modelConfig = fullModel.get(ModClusterConfigResourceDefinition.PATH.getKeyValuePair());
         final ModClusterConfig config = getModClusterConfig(context, modelConfig);
 
         newControllers.add(target.addService(ContainerEventHandlerService.CONFIG_SERVICE_NAME, new ValueService<>(new ImmediateValue<>(config))).setInitialMode(Mode.ACTIVE).install());
@@ -128,6 +128,7 @@ class ModClusterSubsystemAdd extends AbstractBoottimeAddStepHandler {
         }
 
         final String connector = CONNECTOR.resolveModelAttribute(context, modelConfig).asString();
+        final int statusInterval = STATUS_INTERVAL.resolveModelAttribute(context, modelConfig).asInt();
         InjectedValue<SocketBindingManager> socketBindingManager = new InjectedValue<SocketBindingManager>();
         ContainerEventHandlerService service = new ContainerEventHandlerService(config, loadProvider, socketBindingManager);
         final ServiceBuilder<?> builder = AsynchronousService.addService(target, ContainerEventHandlerService.SERVICE_NAME, service, true, true)
@@ -143,7 +144,7 @@ class ModClusterSubsystemAdd extends AbstractBoottimeAddStepHandler {
 
         // Install services for web container integration
         for (ContainerEventHandlerAdapterBuilder adapterBuilder: ServiceLoader.load(ContainerEventHandlerAdapterBuilder.class, ContainerEventHandlerAdapterBuilder.class.getClassLoader())) {
-            newControllers.add(adapterBuilder.build(target, connector).addListener(verificationHandler).setInitialMode(Mode.PASSIVE).install());
+            newControllers.add(adapterBuilder.build(target, connector, statusInterval).addListener(verificationHandler).setInitialMode(Mode.PASSIVE).install());
         }
     }
 
@@ -154,7 +155,7 @@ class ModClusterSubsystemAdd extends AbstractBoottimeAddStepHandler {
     protected void populateModel(OperationContext context, ModelNode operation, Resource resource) throws OperationFailedException {
         if (operation.hasDefined(CommonAttributes.MOD_CLUSTER_CONFIG)) {
             PathAddress opAddress = PathAddress.pathAddress(operation.get(ModelDescriptionConstants.OP_ADDR));
-            PathAddress parent = opAddress.append(ModClusterExtension.CONFIGURATION_PATH);
+            PathAddress parent = opAddress.append(ModClusterConfigResourceDefinition.PATH);
             ModelNode targetOperation = Util.createAddOperation(parent);
             for (AttributeDefinition def : ModClusterConfigResourceDefinition.ATTRIBUTES) {
                 def.validateAndSet(operation, targetOperation);
@@ -188,10 +189,10 @@ class ModClusterSubsystemAdd extends AbstractBoottimeAddStepHandler {
         ModClusterConfig config = new ModClusterConfig();
         config.setAdvertise(ADVERTISE.resolveModelAttribute(context, model).asBoolean());
 
-        if (model.get(SSL_CONFIGURATION_PATH.getKeyValuePair()).isDefined()) {
+        if (model.get(ModClusterSSLResourceDefinition.PATH.getKeyValuePair()).isDefined()) {
             // Add SSL configuration.
             config.setSsl(true);
-            final ModelNode ssl = model.get(SSL_CONFIGURATION_PATH.getKeyValuePair());
+            final ModelNode ssl = model.get(ModClusterSSLResourceDefinition.PATH.getKeyValuePair());
             ModelNode keyAlias = KEY_ALIAS.resolveModelAttribute(context, ssl);
             ModelNode password = PASSWORD.resolveModelAttribute(context, ssl);
             if (keyAlias.isDefined()) {
@@ -264,10 +265,10 @@ class ModClusterSubsystemAdd extends AbstractBoottimeAddStepHandler {
             load = myload;
         }
 
-        if (model.get(ModClusterExtension.DYNAMIC_LOAD_PROVIDER_PATH.getKeyValuePair()).isDefined()) {
-            final ModelNode node = model.get(ModClusterExtension.DYNAMIC_LOAD_PROVIDER_PATH.getKeyValuePair());
-            int decayFactor = DynamicLoadProviderDefinition.DECAY.resolveModelAttribute(context, model).asInt();
-            int history = DynamicLoadProviderDefinition.HISTORY.resolveModelAttribute(context, model).asInt();
+        if (model.get(DynamicLoadProviderDefinition.PATH.getKeyValuePair()).isDefined()) {
+            final ModelNode node = model.get(DynamicLoadProviderDefinition.PATH.getKeyValuePair());
+            int decayFactor = DynamicLoadProviderDefinition.DECAY.resolveModelAttribute(context, node).asInt();
+            int history = DynamicLoadProviderDefinition.HISTORY.resolveModelAttribute(context, node).asInt();
             if (node.hasDefined(CommonAttributes.LOAD_METRIC)) {
                 addLoadMetrics(metrics, node.get(CommonAttributes.LOAD_METRIC), context);
             }

@@ -36,8 +36,7 @@ import org.jboss.security.SecurityContext;
 import org.jboss.security.callbacks.SecurityContextCallbackHandler;
 import org.jboss.security.identity.Role;
 import org.jboss.security.identity.RoleGroup;
-import org.wildfly.extension.undertow.UndertowLogger;
-import org.wildfly.extension.undertow.UndertowMessages;
+import org.wildfly.extension.undertow.logging.UndertowLogger;
 
 import javax.security.auth.Subject;
 import java.security.Principal;
@@ -67,19 +66,22 @@ public class JAASIdentityManagerImpl implements IdentityManager {
             UndertowLogger.ROOT_LOGGER.tracef("Account is not an AccountImpl", account);
             return null;
         }
-        return verifyCredential(account, ((AccountImpl) account).getCredential());
+        AccountImpl accountImpl = (AccountImpl) account;
+        return verifyCredential(accountImpl, accountImpl.getCredential());
     }
 
     @Override
     public Account verify(String id, Credential credential) {
-        Account account = getAccount(id);
+        AccountImpl account = getAccount(id);
         if (credential instanceof DigestCredential) {
             return verifyCredential(account, new DigestCredentialImpl((DigestCredential) credential));
-        } else {
+        } else if(credential instanceof PasswordCredential) {
             final char[] password = ((PasswordCredential) credential).getPassword();
             // The original array may be cleared, this integration relies on it being cached for use later.
             final char[] duplicate = Arrays.copyOf(password, password.length);
             return verifyCredential(account, duplicate);
+        } else {
+            return verifyCredential(account, credential);
         }
     }
 
@@ -88,29 +90,29 @@ public class JAASIdentityManagerImpl implements IdentityManager {
         if (credential instanceof X509CertificateCredential) {
             X509CertificateCredential certCredential = (X509CertificateCredential) credential;
             X509Certificate certificate = certCredential.getCertificate();
-            Account account = getAccount(certificate.getSubjectDN().getName());
+            AccountImpl account = getAccount(certificate.getSubjectDN().getName());
 
             return verifyCredential(account, certificate);
         }
         throw new IllegalArgumentException("Parameter must be a X509CertificateCredential");
     }
 
-    private Account getAccount(final String id) {
+    private AccountImpl getAccount(final String id) {
         return new AccountImpl(id);
     }
 
-    private Account verifyCredential(final Account account, final Object credential) {
+    private Account verifyCredential(final AccountImpl account, final Object credential) {
         final AuthenticationManager authenticationManager = securityDomainContext.getAuthenticationManager();
         final AuthorizationManager authorizationManager = securityDomainContext.getAuthorizationManager();
         final SecurityContext sc = SecurityActions.getSecurityContext();
-        Principal incomingPrincipal = account.getPrincipal();
+        Principal incomingPrincipal = account.getOriginalPrincipal();
         Subject subject = new Subject();
         try {
             boolean isValid = authenticationManager.isValid(incomingPrincipal, credential, subject);
             if (isValid) {
                 UndertowLogger.ROOT_LOGGER.tracef("User: %s is authenticated", incomingPrincipal);
                 if (sc == null) {
-                    throw UndertowMessages.MESSAGES.noSecurityContext();
+                    throw UndertowLogger.ROOT_LOGGER.noSecurityContext();
                 }
                 Principal userPrincipal = getPrincipal(subject);
                 sc.getUtil().createSubjectInfo(incomingPrincipal, credential, subject);
@@ -120,7 +122,7 @@ public class JAASIdentityManagerImpl implements IdentityManager {
                 for (Role role : roles.getRoles()) {
                     roleSet.add(role.getRoleName());
                 }
-                return new AccountImpl(userPrincipal, roleSet, credential);
+                return new AccountImpl(userPrincipal, roleSet, credential, account.getOriginalPrincipal());
             }
         } catch (Exception e) {
             throw new RuntimeException(e);

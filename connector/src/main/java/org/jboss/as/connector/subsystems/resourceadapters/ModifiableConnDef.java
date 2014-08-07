@@ -27,17 +27,17 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.jboss.jca.common.api.metadata.common.CommonPool;
-import org.jboss.jca.common.api.metadata.common.CommonSecurity;
-import org.jboss.jca.common.api.metadata.common.CommonTimeOut;
-import org.jboss.jca.common.api.metadata.common.CommonValidation;
-import org.jboss.jca.common.api.metadata.common.CommonXaPool;
+import org.jboss.jca.common.api.metadata.common.Pool;
 import org.jboss.jca.common.api.metadata.common.Recovery;
-import org.jboss.jca.common.api.metadata.common.v11.CommonConnDef;
+import org.jboss.jca.common.api.metadata.common.Security;
+import org.jboss.jca.common.api.metadata.common.TimeOut;
+import org.jboss.jca.common.api.metadata.common.Validation;
+import org.jboss.jca.common.api.metadata.common.XaPool;
+import org.jboss.jca.common.api.metadata.resourceadapter.ConnectionDefinition;
 import org.jboss.jca.common.api.validator.ValidateException;
 
 
-public class ModifiableConnDef implements CommonConnDef {
+public class ModifiableConnDef implements ConnectionDefinition {
     /**
      * The serialVersionUID
      */
@@ -57,19 +57,23 @@ public class ModifiableConnDef implements CommonConnDef {
 
     private final Boolean useCcm;
 
-    private final CommonPool pool;
+    private final Pool pool;
 
-    private final CommonTimeOut timeOut;
+    private final TimeOut timeOut;
 
-    private final CommonValidation validation;
+    private final Validation validation;
 
-    private final CommonSecurity security;
+    private final Security security;
 
     private final Recovery recovery;
 
     private final Boolean sharable;
 
     private final Boolean enlistment;
+
+    private final Boolean connectable;
+
+    private final Boolean tracking;
 
 
     /**
@@ -89,8 +93,9 @@ public class ModifiableConnDef implements CommonConnDef {
      * @param recovery         recovery
      */
     public ModifiableConnDef(Map<String, String> configProperties, String className, String jndiName,
-                             String poolName, Boolean enabled, Boolean useJavaContext, Boolean useCcm, CommonPool pool, CommonTimeOut timeOut,
-                             CommonValidation validation, CommonSecurity security, Recovery recovery, Boolean sharable, Boolean enlistment) throws ValidateException {
+                             String poolName, Boolean enabled, Boolean useJavaContext, Boolean useCcm, Pool pool, TimeOut timeOut,
+                             Validation validation, Security security, Recovery recovery, Boolean sharable, Boolean enlistment,
+                             final Boolean connectable, final Boolean tracking) throws ValidateException {
         super();
         if (configProperties != null) {
             this.configProperties = new ConcurrentHashMap<String, String>(configProperties.size());
@@ -111,6 +116,8 @@ public class ModifiableConnDef implements CommonConnDef {
         this.recovery = recovery;
         this.sharable = sharable;
         this.enlistment = enlistment;
+        this.connectable = connectable;
+        this.tracking = tracking;
 
     }
 
@@ -194,7 +201,7 @@ public class ModifiableConnDef implements CommonConnDef {
      * @return the pool.
      */
     @Override
-    public final CommonPool getPool() {
+    public final Pool getPool() {
         return pool;
     }
 
@@ -204,7 +211,7 @@ public class ModifiableConnDef implements CommonConnDef {
      * @return the timeOut.
      */
     @Override
-    public final CommonTimeOut getTimeOut() {
+    public final TimeOut getTimeOut() {
         return timeOut;
     }
 
@@ -214,7 +221,7 @@ public class ModifiableConnDef implements CommonConnDef {
      * @return the validation.
      */
     @Override
-    public final CommonValidation getValidation() {
+    public final Validation getValidation() {
         return validation;
     }
 
@@ -224,13 +231,13 @@ public class ModifiableConnDef implements CommonConnDef {
      * @return the security.
      */
     @Override
-    public final CommonSecurity getSecurity() {
+    public final Security getSecurity() {
         return security;
     }
 
     @Override
     public final Boolean isXa() {
-        return (pool instanceof CommonXaPool);
+        return (pool instanceof XaPool);
     }
 
     @Override
@@ -331,24 +338,24 @@ public class ModifiableConnDef implements CommonConnDef {
         sb.append("<connection-definition");
 
         if (className != null)
-            sb.append(" ").append(CommonConnDef.Attribute.CLASS_NAME).append("=\"").append(className).append("\"");
+            sb.append(" ").append(ConnectionDefinition.Attribute.CLASS_NAME).append("=\"").append(className).append("\"");
 
         if (jndiName != null)
-            sb.append(" ").append(CommonConnDef.Attribute.JNDI_NAME).append("=\"").append(jndiName).append("\"");
+            sb.append(" ").append(ConnectionDefinition.Attribute.JNDI_NAME).append("=\"").append(jndiName).append("\"");
 
         if (enabled != null)
-            sb.append(" ").append(CommonConnDef.Attribute.ENABLED).append("=\"").append(enabled).append("\"");
+            sb.append(" ").append(ConnectionDefinition.Attribute.ENABLED).append("=\"").append(enabled).append("\"");
 
         if (useJavaContext != null) {
-            sb.append(" ").append(CommonConnDef.Attribute.USE_JAVA_CONTEXT);
+            sb.append(" ").append(ConnectionDefinition.Attribute.USE_JAVA_CONTEXT);
             sb.append("=\"").append(useJavaContext).append("\"");
         }
 
         if (poolName != null)
-            sb.append(" ").append(CommonConnDef.Attribute.POOL_NAME).append("=\"").append(poolName).append("\"");
+            sb.append(" ").append(ConnectionDefinition.Attribute.POOL_NAME).append("=\"").append(poolName).append("\"");
 
         if (useCcm != null)
-            sb.append(" ").append(CommonConnDef.Attribute.USE_CCM).append("=\"").append(useCcm).append("\"");
+            sb.append(" ").append(ConnectionDefinition.Attribute.USE_CCM).append("=\"").append(useCcm).append("\"");
 
         sb.append(">");
 
@@ -357,10 +364,10 @@ public class ModifiableConnDef implements CommonConnDef {
             while (it.hasNext()) {
                 Map.Entry<String, String> entry = it.next();
 
-                sb.append("<").append(CommonConnDef.Tag.CONFIG_PROPERTY);
+                sb.append("<").append(ConnectionDefinition.Tag.CONFIG_PROPERTY);
                 sb.append(" name=\"").append(entry.getKey()).append("\">");
                 sb.append(entry.getValue());
-                sb.append("</").append(CommonConnDef.Tag.CONFIG_PROPERTY).append(">");
+                sb.append("</").append(ConnectionDefinition.Tag.CONFIG_PROPERTY).append(">");
             }
         }
 
@@ -403,5 +410,15 @@ public class ModifiableConnDef implements CommonConnDef {
     @Override
     public Boolean isEnlistment() {
         return enlistment;
+    }
+
+    @Override
+    public Boolean isConnectable() {
+        return connectable;
+    }
+
+    @Override
+    public Boolean isTracking() {
+        return tracking;
     }
 }

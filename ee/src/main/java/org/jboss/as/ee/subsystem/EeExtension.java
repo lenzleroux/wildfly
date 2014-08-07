@@ -48,7 +48,7 @@ import org.jboss.as.controller.transform.description.RejectAttributeChecker;
 import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.controller.transform.description.TransformationDescription;
 import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
-import org.jboss.as.ee.EeMessages;
+import org.jboss.as.ee.logging.EeLogger;
 import org.jboss.as.ee.component.deployers.DefaultBindingsConfigurationProcessor;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
@@ -64,7 +64,7 @@ public class EeExtension implements Extension {
     public static final String SUBSYSTEM_NAME = "ee";
     private static final String RESOURCE_NAME = EeExtension.class.getPackage().getName() + ".LocalDescriptions";
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MAJOR_VERSION = 3;
     private static final int MANAGEMENT_API_MINOR_VERSION = 0;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
@@ -83,7 +83,7 @@ public class EeExtension implements Extension {
                 MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
 
         // Register the root subsystem resource.
-        final ManagementResourceRegistration rootResource = subsystem.registerSubsystemModel(EeSubsystemRootResource.INSTANCE);
+        final ManagementResourceRegistration rootResource = subsystem.registerSubsystemModel(EeSubsystemRootResource.create());
 
         // Mandatory describe operation
         rootResource.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, GenericSubsystemDescribeHandler.INSTANCE);
@@ -110,6 +110,8 @@ public class EeExtension implements Extension {
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.EE_1_0.getUriString(), EESubsystemParser10.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.EE_1_1.getUriString(), EESubsystemParser11.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.EE_2_0.getUriString(), EESubsystemParser20.INSTANCE);
+        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.EE_3_0.getUriString(), EESubsystemParser20.INSTANCE);
+        context.setProfileParsingCompletionHandler(new BeanValidationProfileParsingCompletionHandler());
     }
 
     private void registerTransformers(SubsystemRegistration subsystem) {
@@ -147,7 +149,7 @@ public class EeExtension implements Extension {
         @Override
         public String getRejectionLogMessage(Map<String, ModelNode> attributes) {
 
-            return EeMessages.MESSAGES.onlyTrueAllowedForJBossDescriptorPropertyReplacement_AS7_4892();
+            return EeLogger.ROOT_LOGGER.onlyTrueAllowedForJBossDescriptorPropertyReplacement_AS7_4892();
         }
 
         @Override
@@ -217,7 +219,7 @@ public class EeExtension implements Extension {
 
         @Override
         public String getRejectionLogMessage(Map<String, ModelNode> attributes) {
-            return EeMessages.MESSAGES.propertiesNotAllowedOnGlobalModules();
+            return EeLogger.ROOT_LOGGER.propertiesNotAllowedOnGlobalModules();
         }
 
         private void cleanModel(final ModelNode attributeValue) {

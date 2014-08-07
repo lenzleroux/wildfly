@@ -41,7 +41,7 @@ import org.jboss.as.ee.component.interceptors.InterceptorClassDescription;
 import org.jboss.as.ee.component.interceptors.InterceptorOrder;
 import org.jboss.as.ee.component.serialization.WriteReplaceInterface;
 import org.jboss.as.ee.metadata.MetadataCompleteMarker;
-import org.jboss.as.ejb3.EjbMessages;
+import org.jboss.as.ejb3.logging.EjbLogger;
 import org.jboss.as.ejb3.component.DefaultAccessTimeoutService;
 import org.jboss.as.ejb3.component.EJBViewDescription;
 import org.jboss.as.ejb3.component.MethodIntf;
@@ -107,11 +107,12 @@ public class SingletonComponentDescription extends SessionBeanComponentDescripti
         ComponentConfiguration singletonComponentConfiguration = new ComponentConfiguration(this, classIndex, moduleClassLoader, moduleLoader);
         // setup the component create service
         singletonComponentConfiguration.setComponentCreateServiceFactory(new SingletonComponentCreateServiceFactory(this.isInitOnStartup(), dependsOn));
-        if(isSecurityEnabled()) {
+        if(isExplicitSecurityDomainConfigured()) {
             getConfigurators().add(new ComponentConfigurator() {
                     @Override
                     public void configure(final DeploymentPhaseContext context, final ComponentDescription description, final ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
-                        configuration.addPostConstructInterceptor(new SecurityContextInterceptorFactory(isSecurityEnabled(), false), InterceptorOrder.View.SECURITY_CONTEXT);
+                        configuration.addPostConstructInterceptor(new SecurityContextInterceptorFactory(isExplicitSecurityDomainConfigured(), false,
+                                SecurityContextInterceptorFactory.contextIdForDeployment(context.getDeploymentUnit())), InterceptorOrder.View.SECURITY_CONTEXT);
                     }
                 });
         }
@@ -236,7 +237,7 @@ public class SingletonComponentDescription extends SessionBeanComponentDescripti
 
     @Override
     protected ViewConfigurator getSessionBeanObjectViewConfigurator() {
-        throw EjbMessages.MESSAGES.ejb2xViewNotApplicableForSingletonBeans();
+        throw EjbLogger.ROOT_LOGGER.ejb2xViewNotApplicableForSingletonBeans();
     }
 
     private void addConcurrencyManagementInterceptor() {

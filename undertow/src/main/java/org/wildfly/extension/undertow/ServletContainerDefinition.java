@@ -34,6 +34,7 @@ import org.jboss.as.controller.PersistentResourceDefinition;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.dmr.ModelNode;
@@ -56,12 +57,13 @@ public class ServletContainerDefinition extends PersistentResourceDefinition {
             new SimpleAttributeDefinitionBuilder(Constants.DEFAULT_BUFFER_CACHE, ModelType.STRING, true)
                     .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
                     .setAllowExpression(true)
+                    .setDefaultValue(new ModelNode("default"))
                     .build();
 
     protected static final SimpleAttributeDefinition STACK_TRACE_ON_ERROR =
             new SimpleAttributeDefinitionBuilder(Constants.STACK_TRACE_ON_ERROR, ModelType.STRING, true)
                     .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
-                    .setDefaultValue(new ModelNode(Constants.NONE))
+                    .setDefaultValue(new ModelNode(ServletStackTraces.LOCAL_ONLY.toString()))
                     .setValidator(new EnumValidator<>(ServletStackTraces.class, true, true))
                     .setAllowExpression(true)
                     .build();
@@ -87,6 +89,24 @@ public class ServletContainerDefinition extends PersistentResourceDefinition {
                     .setDefaultValue(new ModelNode(false))
                     .build();
 
+
+    protected static final AttributeDefinition EAGER_FILTER_INIT =
+            new SimpleAttributeDefinitionBuilder("eager-filter-initialization", ModelType.BOOLEAN, true)
+                    .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+                    .setAllowExpression(true)
+                    .setDefaultValue(new ModelNode(false))
+                    .build();
+
+
+    protected static final AttributeDefinition DEFAULT_SESSION_TIMEOUT =
+            new SimpleAttributeDefinitionBuilder("default-session-timeout", ModelType.INT, true)
+                    .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+                    .setAllowExpression(true)
+                    .setMeasurementUnit(MeasurementUnit.MINUTES)
+                    .setDefaultValue(new ModelNode(30)) //30 minutes
+                    .build();
+
+
     private static final List<? extends PersistentResourceDefinition> CHILDREN;
     private static final Collection<AttributeDefinition> ATTRIBUTES = Arrays.asList(
             ALLOW_NON_STANDARD_WRAPPERS,
@@ -94,7 +114,9 @@ public class ServletContainerDefinition extends PersistentResourceDefinition {
             STACK_TRACE_ON_ERROR,
             DEFAULT_ENCODING,
             USE_LISTENER_ENCODING,
-            IGNORE_FLUSH);
+            IGNORE_FLUSH,
+            EAGER_FILTER_INIT,
+            DEFAULT_SESSION_TIMEOUT);
 
     static {
         List<PersistentResourceDefinition>  children = new ArrayList<>();

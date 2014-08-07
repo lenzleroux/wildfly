@@ -23,10 +23,12 @@
 package org.jboss.as.service;
 
 import java.lang.reflect.Method;
+import java.util.List;
 
 import org.jboss.as.naming.ManagedReference;
+import org.jboss.as.server.deployment.SetupAction;
 import org.jboss.as.service.component.ServiceComponentInstantiator;
-import org.jboss.msc.service.ServiceName;
+import org.jboss.as.service.logging.SarLogger;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
@@ -47,8 +49,8 @@ final class CreateDestroyService extends AbstractService {
     private ManagedReference managedReference;
 
     CreateDestroyService(final Object mBeanInstance, final Method createMethod, final Method destroyMethod, ServiceComponentInstantiator componentInstantiator,
-                         final ServiceName duServiceName, final ClassLoader mbeanContextClassLoader) {
-        super(mBeanInstance, duServiceName, mbeanContextClassLoader);
+                         List<SetupAction> setupActions, final ClassLoader mbeanContextClassLoader) {
+        super(mBeanInstance, setupActions, mbeanContextClassLoader);
         this.createMethod = createMethod;
         this.destroyMethod = destroyMethod;
         this.componentInstantiator = componentInstantiator;
@@ -62,7 +64,7 @@ final class CreateDestroyService extends AbstractService {
         try {
             invokeLifecycleMethod(createMethod, context);
         } catch (final Exception e) {
-            throw SarMessages.MESSAGES.failedExecutingLegacyMethod(e, "create()");
+            throw new StartException(SarLogger.ROOT_LOGGER.failedExecutingLegacyMethod("create()"), e);
         }
         if(componentInstantiator != null) {
             managedReference = componentInstantiator.initializeInstance(getValue());
@@ -80,7 +82,7 @@ final class CreateDestroyService extends AbstractService {
         try {
             invokeLifecycleMethod(destroyMethod, context);
         } catch (final Exception e) {
-            SarLogger.ROOT_LOGGER.failedExecutingLegacyMethod(e, "create()");
+            SarLogger.ROOT_LOGGER.error(SarLogger.ROOT_LOGGER.failedExecutingLegacyMethod("create()"), e);
         }
     }
 

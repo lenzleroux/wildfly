@@ -22,8 +22,8 @@
 
 package org.jboss.as.naming;
 
-import static org.jboss.as.naming.NamingMessages.MESSAGES;
-
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashSet;
@@ -46,9 +46,11 @@ import javax.naming.event.NamingListener;
 import javax.naming.spi.ResolveResult;
 
 import org.jboss.as.naming.deployment.ContextNames;
+import org.jboss.as.naming.logging.NamingLogger;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * @author John Bailey
@@ -123,28 +125,39 @@ public class ServiceBasedNamingStore implements NamingStore {
     }
 
     private Object lookup(final String name, final ServiceName lookupName, boolean dereference) throws NamingException {
-        final ServiceController<?> controller = serviceRegistry.getService(lookupName);
-        final Object object;
-        if (controller != null) {
-            try {
-                object = controller.getValue();
-            } catch (IllegalStateException e) {
-                //occurs if the service is not actually up
-                throw new NameNotFoundException("Error looking up " + name + ", service " + lookupName + " is not started");
+        try {
+            final ServiceController<?> controller = serviceRegistry.getService(lookupName);
+            if (controller != null) {
+                final Object object = controller.getValue();
+                if (dereference && object instanceof ManagedReferenceFactory) {
+                    if(WildFlySecurityManager.isChecking()) {
+                        //WFLY-3487 JNDI lookups should be executed in a clean access control context
+                        return AccessController.doPrivileged(new PrivilegedAction<Object>() {
+                            @Override
+                            public Object run() {
+                                final ManagedReference managedReference = ManagedReferenceFactory.class.cast(object).getReference();
+                                return managedReference != null ? managedReference.getInstance() : null;
+                            }
+                        });
+                    } else {
+                        final ManagedReference managedReference = ManagedReferenceFactory.class.cast(object).getReference();
+                        return managedReference != null ? managedReference.getInstance() : null;
+                    }
+                } else {
+                    return object;
+                }
+            } else {
+                return null;
             }
-        } else {
-            return null;
+        } catch (IllegalStateException e) {
+            NameNotFoundException n = new NameNotFoundException(name);
+            n.initCause(e);
+            throw n;
+        } catch (Throwable t) {
+            NamingException n = NamingLogger.ROOT_LOGGER.lookupError(name);
+            n.initCause(t);
+            throw n;
         }
-        if (dereference && object instanceof ManagedReferenceFactory) {
-            try {
-                return ManagedReferenceFactory.class.cast(object).getReference().getInstance();
-            } catch (Exception e) {
-                NamingException n = new NamingException(e.getMessage());
-                n.initCause(e);
-                throw n;
-            }
-        }
-        return object;
     }
 
     public List<NameClassPair> list(final Name name) throws NamingException {
@@ -226,7 +239,7 @@ public class ServiceBasedNamingStore implements NamingStore {
     private List<ServiceName> listChildren(final ServiceName name, boolean isContextBinding) throws NamingException {
         final ConcurrentSkipListSet<ServiceName> boundServices = this.boundServices;
         if (!isContextBinding && boundServices.contains(name)) {
-            throw MESSAGES.cannotListNonContextBinding();
+            throw NamingLogger.ROOT_LOGGER.cannotListNonContextBinding();
         }
         final NavigableSet<ServiceName> tail = boundServices.tailSet(name);
         final List<ServiceName> children = new ArrayList<ServiceName>();
@@ -255,7 +268,7 @@ public class ServiceBasedNamingStore implements NamingStore {
     public void add(final ServiceName serviceName) {
         final ConcurrentSkipListSet<ServiceName> boundServices = this.boundServices;
         if (boundServices.contains(serviceName)) {
-            throw MESSAGES.serviceAlreadyBound(serviceName);
+            throw NamingLogger.ROOT_LOGGER.serviceAlreadyBound(serviceName);
         }
         boundServices.add(serviceName);
     }

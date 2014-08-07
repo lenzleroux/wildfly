@@ -25,11 +25,9 @@
 <!--
     1. The testsuite module has a small number of submodules:
 
-    integration - holds all integration tests for AS7.
-    compat      - holds all compatibility management tests for AS7.
-    domain      - holds all domain management tests for AS7.
-    benchmark   - holds all benchmark tests for AS7.
-    stress      - holds all stress tests for AS7.
+    integration - holds all integration tests for Wildfly.
+    compat      - holds all compatibility management tests for Wildfly.
+    domain      - holds all domain management tests for Wildfly.
 
     All tests should fit into one of these four categories.
 
@@ -57,12 +55,12 @@
     <parent>
         <groupId>org.wildfly</groupId>
         <artifactId>wildfly-parent</artifactId>
-        <version>8.0.1.Final-SNAPSHOT</version>
+        <version>9.0.0.Alpha1-SNAPSHOT</version>
     </parent>
 
     <groupId>org.wildfly</groupId>
     <artifactId>wildfly-testsuite</artifactId>
-    <version>8.0.1.Final-SNAPSHOT</version>
+    <version>9.0.0.Alpha1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>WildFly Test Suite: Aggregator</name>
@@ -170,18 +168,16 @@
         <dependencies>
             <!-- Arquillian bill of materials, used to configure Arquillian versions -->
             <dependency>
-                <groupId>org.jboss.arquillian</groupId>
-                <artifactId>arquillian-bom</artifactId>
-                <version>${version.org.jboss.arquillian.core}</version>
-                <scope>import</scope>
-                <type>pom</type>
-            </dependency>
-            <dependency>
                 <groupId>com.sun</groupId>
                 <artifactId>tools</artifactId>
                 <version>1.7</version>
                 <scope>system</scope>
                 <systemPath>${java.home}/../lib/tools.jar</systemPath> <!-- since jdk7 also on MAC this is proper path -->
+            </dependency>
+            <dependency>
+                <groupId>org.syslog4j</groupId>
+                <artifactId>syslog4j</artifactId>
+                <version>${version.org.syslog4j}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -212,9 +208,14 @@
             <artifactId>arquillian-testenricher-initialcontext</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.wildfly</groupId>
+            <groupId>org.wildfly.arquillian</groupId>
             <artifactId>wildfly-arquillian-container-managed</artifactId>
-            <version>${version.arquillian_wildfly}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly.arquillian</groupId>
+            <artifactId>wildfly-arquillian-protocol-jmx</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -339,6 +340,29 @@
                            </configuration>
                        </execution>
                    </executions>
+                    <!-- WFLY-3361 - use external xalan for XML transformations to
+                    ensure consistent behaviour on all platrforms.-->
+                   <dependencies>
+                       <dependency>
+                           <groupId>xalan</groupId>
+                           <artifactId>xalan</artifactId>
+                           <version>2.7.1</version>
+                       </dependency>
+                   </dependencies>
+               </plugin>
+
+               <!-- WFLY-3361 - use external xalan for XML transformations to
+               ensure consistent behaviour on all platrforms.-->
+               <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                   <dependencies>
+                       <dependency>
+                           <groupId>xalan</groupId>
+                           <artifactId>xalan</artifactId>
+                           <version>2.7.1</version>
+                       </dependency>
+                   </dependencies>
                </plugin>
 
                 <!--
@@ -445,13 +469,18 @@
             <modules><module>integration</module></modules>
         </profile>
         <profile>
-            <id>integ-clust.module.profile</id>
-            <activation><property><name>ts.clust</name></property></activation>
+            <id>integ-clustering.module.profile</id>
+            <activation><property><name>ts.clustering</name></property></activation>
             <modules><module>integration</module></modules>
         </profile>
         <profile>
             <id>integ-iiop.module.profile</id>
             <activation><property><name>ts.iiop</name></property></activation>
+            <modules><module>integration</module></modules>
+        </profile>
+        <profile>
+            <id>integ-picketlink.module.profile</id>
+            <activation><property><name>ts.picketlink</name></property></activation>
             <modules><module>integration</module></modules>
         </profile>
         <profile>
@@ -463,12 +492,6 @@
             <id>integ-rts.module.profile</id>
             <activation><property><name>ts.rts</name></property></activation>
             <modules><module>integration</module></modules>
-        </profile>
-
-        <profile>
-            <id>benchmark.module.profile</id>
-            <activation><property><name>benchmark.module</name></property></activation>
-            <modules><module>benchmark</module></modules>
         </profile>
 
         <profile>
@@ -493,18 +516,6 @@
             <modules><module>domain</module></modules>
         </profile>
 
-        <profile>
-            <id>stress.module.profile</id>
-            <activation><property><name>stress.module</name></property></activation>
-            <modules><module>stress</module></modules>
-        </profile>
-        <profile>
-            <id>stress_.module.profile</id>
-            <activation><property><name>ts.stress</name></property></activation>
-            <modules><module>stress</module></modules>
-        </profile>
-
-
 
         <!--
           Debugging profiles.
@@ -522,10 +533,42 @@
             <properties>
                 <surefire.jpda.args>-agentlib:jdwp=transport=dt_socket,address=${as.debug.port},server=y,suspend=y</surefire.jpda.args>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>xml-maven-plugin</artifactId>
+                        <executions combine.children="append">
+                            <execution>
+                                <id>ts.config-as.saml-debug</id>
+                                <phase>process-test-resources</phase>
+                                <goals><goal>transform</goal></goals>
+                                <inherited>true</inherited>
+                                <configuration>
+                                    <transformationSets>
+                                        <transformationSet>
+                                            <dir>${basedir}/target/jbossas/standalone/configuration</dir>
+                                            <outputDir>${basedir}/target/jbossas/standalone/configuration</outputDir>
+                                            <stylesheet>${xslt.scripts.dir}/addSAMLTokenTimeout.xsl</stylesheet>
+                                            <includes>
+                                                <include>standalone*.xml</include>
+                                            </includes>
+                                            <parameters>
+                                                <parameter><name>samlTokenTomeout</name><value>3600000</value></parameter>
+                                                <parameter><name>samlClockSkew</name><value>1000</value></parameter>
+                                            </parameters>
+                                        </transformationSet>
+                                    </transformationSets>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
 
 
-        <!-- IPv6. AS7-2228. -->
+        <!-- IPv6. Wildfly-2228. -->
         <profile>
             <id>ts.ipv6</id>
             <activation><property><name>ipv6</name></property></activation>
@@ -546,7 +589,7 @@
 
             </properties>
         </profile>
-        <!-- Ugly workaround for MANTRUN-172 :/   See AS7-3993. -->
+        <!-- Ugly workaround for MANTRUN-172 :/   See Wildfly-3993. -->
         <profile>
             <id>ts.ipv6.dummy.node0</id>
             <activation><property><name>node0</name></property></activation>
@@ -590,22 +633,13 @@
 
 
 
-        <!-- Security policy.  ARQ-690, AS7-2823, AS7-2826. -->
+        <!-- Security policy.  ARQ-690, Wildfly-2823, Wildfly-2826. -->
         <profile>
             <id>ts.security.policy</id>
             <activation><property><name>security.policy</name></property></activation>
             <properties>
                 <jvm.args.securityManager>-Djava.security.manager</jvm.args.securityManager>
                 <jvm.args.securityPolicy>-Djava.security.policy=${security.policy}</jvm.args.securityPolicy>
-            </properties>
-        </profile>
-
-        <!-- Security manager. -->
-        <profile>
-            <id>ts.security.manager</id>
-            <activation><property><name>security.manager</name></property></activation>
-            <properties>
-                <jvm.args.securityManager>-Djava.security.manager</jvm.args.securityManager>
             </properties>
         </profile>
 
@@ -635,7 +669,7 @@
           Usage:
              mvn clean install -rf testsuite -Dds=mysql51
 
-          See: https://community.jboss.org/wiki/DataSourceConfigurationInAS7
+          See: https://community.jboss.org/wiki/DataSourceConfigurationInWildfly
         -->
 
         <profile>
@@ -1108,12 +1142,12 @@
                                                         <!-- Excludes solve "Can't add different class with same name: ..." -->
                                                         <!-- We have 2.x in main. -->
                                                         <exclude name="com/sun/jsf-impl/1.*/**/*"/>
-                                                        <!--  AS7-3383 - com/sun/codemodel vs. /1.0/com/sun/codemodel -->
+                                                        <!--  Wildfly-3383 - com/sun/codemodel vs. /1.0/com/sun/codemodel -->
                                                         <exclude name="com/sun/xml/**/*"/>
                                                         <exclude name="javax/faces/api/1.2/**/*"/>
-                                                        <!-- AS7-3390 -->
+                                                        <!-- Wildfly-3390 -->
                                                         <exclude name="org/apache/commons/beanutils/**/*"/>
-                                                        <!-- AS7-3389 -->
+                                                        <!-- Wildfly-3389 -->
                                                     </fileset>
                                                 </classfiles>
                                                 <sourcefiles encoding="UTF-8">
@@ -1289,7 +1323,6 @@
                 </plugins>
             </build>
         </profile>
-
 
     </profiles>
 </project>
